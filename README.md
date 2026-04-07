@@ -1,6 +1,6 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v0.8.5`
+**Текущая версия:** `v0.9.0`
 **Платформа:** Windows
 **Назначение:** генератор KML-сеток для AlpineQuest
 
@@ -123,9 +123,10 @@ lon, lat = transformer.transform(y, x)
 Для будущей разработки используются проектные документы:
 
 - [`GRIDBASE.md`](GRIDBASE.md) — техническая база приложения для новых чатов с Codex.
+- [`USER_GUIDE.md`](USER_GUIDE.md) — пользовательская инструкция для ручной проверки и обычной работы.
 - [`roadmap.md`](roadmap.md) — план развития до версии `v1.0`.
 - [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v0.8.5.md`](versions/v0.8.5.md) — описание текущей версии.
+- [`versions/v0.9.0.md`](versions/v0.9.0.md) — описание текущей версии.
 
 ---
 
@@ -171,6 +172,6 @@ dist/LIMUZIN_GRID_MANAGER.exe
 
 ## Текущая версия
 
-Текущая принятая версия: `v0.8.5`.
+Текущая принятая версия: `v0.9.0`.
 
-Изменения версии описаны в [`versions/v0.8.5.md`](versions/v0.8.5.md).
+Изменения версии описаны в [`versions/v0.9.0.md`](versions/v0.9.0.md).

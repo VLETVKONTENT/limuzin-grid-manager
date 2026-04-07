@@ -924,7 +924,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.kml_style_summary)
 
         self.kml_style_button = QPushButton("Настроить стиль KML")
-        self.kml_style_button.setToolTip("Цвета линий, толщина и заливка только больших квадратов.")
+        self.kml_style_button.setToolTip("Цвета линий, толщина и заливка 1000x1000 и 100x100.")
         layout.addWidget(self.kml_style_button)
 
         note = QLabel("Заливка 100x100 применяется к каждому малому квадрату одним выбранным цветом.")

@@ -36,6 +36,7 @@
 - `src/limuzin_grid_manager/__init__.py`
 - `version_info.txt`
 - `README.md`, если меняется текущая публичная версия или описание возможностей
+- `USER_GUIDE.md`, если меняется пользовательский сценарий или чеклист ручной проверки
 - `GRIDBASE.md`, если меняется базовая архитектура или логика приложения
 - `roadmap.md`, если меняется статус пункта roadmap
 - `versions/GRIDVERSIONS.md`
@@ -94,7 +95,7 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 
 ## Текущий статус
 
-- Последняя опубликованная версия: `v0.8.5`.
-- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.8.5
+- Последняя опубликованная версия: `v0.9.0`.
+- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.9.0
 - Основной источник технического контекста: `GRIDBASE.md`.
 - История версий: `versions/GRIDVERSIONS.md`.
