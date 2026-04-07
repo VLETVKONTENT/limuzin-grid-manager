@@ -5,7 +5,7 @@
 ## Репозиторий
 
 - GitHub: https://github.com/VLETVKONTENT/limuzin-grid-manager
-- Видимость: приватный репозиторий.
+- Видимость: готовится к публичному репозиторию для релиза `v1.0.0`.
 - Основная ветка: `main`.
 - Теги версий: `vX.Y.Z`, например `v0.1.0`.
 - EXE-файлы не хранятся напрямую в git-истории. Готовый `LIMUZIN_GRID_MANAGER.exe` прикрепляется к GitHub Release как asset.
@@ -93,9 +93,21 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
   - `dist/`
 - Не добавлять EXE в git, если только пользователь прямо не попросит хранить бинарник в репозитории.
 
+## Проверка перед публичным репозиторием
+
+Перед переключением видимости на public нужно проверить:
+
+- `git status --short --branch --ignored`: не должно быть неигнорируемых личных или временных файлов.
+- `git ls-files`: в индексе не должно быть `.env`, ключей, локальных `.lgm.json`, пользовательских KML/KMZ/ZIP-экспортов, EXE или баз данных.
+- `git grep` по словам `token`, `secret`, `password`, `api_key` и шаблонам приватных ключей: не должно быть секретов.
+- История git не должна содержать EXE, архивы, локальные проекты, ключи или `.env`.
+- `.venv/`, `dist/`, `build/`, `.pytest_cache/`, `__pycache__/`, `*.spec`, `*.exe`, пользовательские `*.kml`, `*.kmz`, `*.zip` и `*.lgm.json` должны оставаться игнорируемыми.
+- Готовый EXE прикрепляется только к GitHub Release как asset.
+
 ## Текущий статус
 
-- Последняя опубликованная версия: `v0.9.0`.
-- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.9.0
+- Последняя подготовленная версия: `v1.0.0`.
+- Последний опубликованный release после публикации: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v1.0.0
+- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.9.0
 - Основной источник технического контекста: `GRIDBASE.md`.
 - История версий: `versions/GRIDVERSIONS.md`.

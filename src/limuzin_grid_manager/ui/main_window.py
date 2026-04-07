@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QSettings, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -78,6 +78,9 @@ from limuzin_grid_manager.ui.preview import GridPreviewWidget
 
 
 MAX_BIG_TILE_DIALOG_ROWS = 5_000
+SETTINGS_ORGANIZATION = "limuzin"
+SETTINGS_APPLICATION = "LIMUZIN GRID MANAGER"
+LAST_PROJECT_PATH_KEY = "project/last_path"
 
 
 class ExportWorker(QObject):
@@ -483,7 +486,7 @@ class KmlStyleDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, settings: QSettings | None = None, restore_last_project: bool = True) -> None:
         super().__init__()
         self.setWindowTitle("LIMUZIN GRID MANAGER")
         icon_path = resource_path("icon.ico")
@@ -498,6 +501,7 @@ class MainWindow(QMainWindow):
         self._latest_stats: GridStats | None = None
         self._latest_options: GridOptions | None = None
         self._current_project_path: Path | None = None
+        self._settings = settings or QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
         self._last_export_mode = ExportMode.KML
@@ -506,6 +510,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_signals()
         self._apply_style()
+        if restore_last_project:
+            self._restore_last_project()
         self._schedule_stats_update()
 
     def _build_menus(self) -> None:
@@ -1007,6 +1013,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def new_project(self) -> None:
         self._current_project_path = None
+        self._clear_remembered_project_path()
         self._clear_last_output_path()
         self._apply_project_state(default_project_state())
         self._update_project_status()
@@ -1031,6 +1038,7 @@ class MainWindow(QMainWindow):
             return
 
         self._current_project_path = project_path
+        self._remember_project_path(project_path)
         self._clear_last_output_path()
         self._apply_project_state(state)
         self._update_project_status()
@@ -1064,6 +1072,7 @@ class MainWindow(QMainWindow):
             return
 
         self._current_project_path = saved_path
+        self._remember_project_path(saved_path)
         self._update_project_status()
         self.status_label.setText(f"Проект сохранен: {saved_path.name}")
 
@@ -1163,6 +1172,46 @@ class MainWindow(QMainWindow):
         finally:
             for widget, was_blocked in previous:
                 widget.blockSignals(was_blocked)
+
+    def _restore_last_project(self) -> None:
+        stored_path = self._settings.value(LAST_PROJECT_PATH_KEY, "", str)
+        if not stored_path:
+            return
+
+        project_path = Path(stored_path).expanduser()
+        if not project_path.is_file():
+            self._clear_remembered_project_path()
+            self.status_label.setText("Последний проект не найден")
+            return
+
+        try:
+            state = load_project_state(project_path)
+        except ProjectFileError as exc:
+            self._clear_remembered_project_path()
+            self.project_status.setToolTip(f"Не удалось открыть последний проект: {exc}")
+            self.status_label.setText("Последний проект не открыт")
+            return
+
+        self._current_project_path = project_path
+        self._clear_last_output_path()
+        self._apply_project_state(state)
+        self._update_project_status()
+        self.status_label.setText(f"Открыт последний проект: {project_path.name}")
+
+    def _remember_project_path(self, path: Path) -> None:
+        self._settings.setValue(LAST_PROJECT_PATH_KEY, str(path.expanduser()))
+
+    def _clear_remembered_project_path(self) -> None:
+        self._settings.remove(LAST_PROJECT_PATH_KEY)
+
+    def _save_current_project_reference(self) -> None:
+        if self._current_project_path is None:
+            self._clear_remembered_project_path()
+            return
+        if self._current_project_path.is_file():
+            self._remember_project_path(self._current_project_path)
+        else:
+            self._clear_remembered_project_path()
 
     def _update_project_status(self) -> None:
         if self._current_project_path is None:
@@ -1610,6 +1659,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Экспорт", "Идет экспорт. Дождитесь завершения или нажмите «Отменить».")
             event.ignore()
             return
+        self._save_current_project_reference()
         super().closeEvent(event)
 
     def _apply_style(self) -> None:

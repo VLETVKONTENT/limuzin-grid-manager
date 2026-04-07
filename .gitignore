@@ -6,3 +6,25 @@ build/
 dist/
 *.spec
 *.exe
+.ruff_cache/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# User-generated exports and local project files
+*.kml
+*.kmz
+*.zip
+*.lgm.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
