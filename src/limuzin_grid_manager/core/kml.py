@@ -23,6 +23,7 @@ def write_kml_all(
     options = options.normalized()
     stats = ensure_exportable(bounds, options)
     transformer = make_transformer_for_zone(stats.zone or 0)
+    big_tile_names = dict(options.big_tile_names)
 
     total_work = max(stats.big_grid.total if stats.big_grid else 1, 1)
     done = 0
@@ -38,10 +39,12 @@ def write_kml_all(
             for row, col, x_top, y_left in _iter_grid_cells(stats.big_bounds, step_big):
                 idx0 = snake_index(row, col, stats.big_grid.cols) if options.snake_big else row * stats.big_grid.cols + col
                 big_num = idx0 + 1
+                big_folder_name = _big_tile_folder_name(big_num, big_tile_names)
+                big_placemark_name = _big_tile_placemark_name(big_num, big_tile_names)
                 fh.write("<Folder>\n")
-                fh.write(f"<name>{escape_xml(f'Квадрат {big_num:03d} (1000x1000)')}</name>\n")
+                fh.write(f"<name>{escape_xml(big_folder_name)}</name>\n")
                 fh.write("<open>0</open>\n")
-                _write_rectangle_placemark(fh, f"{big_num:03d}", x_top, y_left, step_big, 2, transformer)
+                _write_rectangle_placemark(fh, big_placemark_name, x_top, y_left, step_big, 2, transformer)
 
                 if options.include_100:
                     fh.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
@@ -85,6 +88,7 @@ def write_zip_per_big_tile(
         include_1000=True,
         include_100=options.include_100,
         snake_big=options.snake_big,
+        big_tile_names=options.big_tile_names,
         small_numbering_mode=options.small_numbering_mode,
         small_numbering_direction=options.small_numbering_direction,
         small_numbering_start_corner=options.small_numbering_start_corner,
@@ -96,6 +100,7 @@ def write_zip_per_big_tile(
     assert stats.big_bounds is not None
     assert stats.big_grid is not None
     transformer = make_transformer_for_zone(stats.zone or 0)
+    big_tile_names = dict(options.big_tile_names)
 
     out_zip_path.parent.mkdir(parents=True, exist_ok=True)
     total = stats.big_grid.total
@@ -106,7 +111,7 @@ def write_zip_per_big_tile(
             big_num = idx0 + 1
             zip_file.writestr(
                 f"tile_{big_num:03d}.kml",
-                _tile_kml(big_num, x_top, y_left, options, transformer),
+                _tile_kml(big_num, x_top, y_left, options, transformer, big_tile_names),
             )
             done += 1
             _notify(progress, done, total)
@@ -185,6 +190,7 @@ def _tile_kml(
     y_left: int,
     options: GridOptions,
     transformer: object,
+    big_tile_names: dict[int, str],
 ) -> str:
     lines: list[str] = []
 
@@ -193,8 +199,10 @@ def _tile_kml(
             lines.append(value)
 
     writer = ListWriter()
-    _write_document_start(writer, f"Квадрат {big_num:03d}")
-    _write_rectangle_placemark(writer, f"{big_num:03d}", x_top, y_left, 1000, 2, transformer)
+    document_name = _big_tile_document_name(big_num, big_tile_names)
+    placemark_name = _big_tile_placemark_name(big_num, big_tile_names)
+    _write_document_start(writer, document_name)
+    _write_rectangle_placemark(writer, placemark_name, x_top, y_left, 1000, 2, transformer)
     if options.include_100:
         writer.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
         for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
@@ -226,6 +234,18 @@ def _iter_subcells(x_top: int, y_left: int) -> Iterator[tuple[int, int, int, int
 def _notify(progress: Callable[[int, int], None] | None, done: int, total: int) -> None:
     if progress is not None:
         progress(done, total)
+
+
+def _big_tile_folder_name(big_num: int, big_tile_names: dict[int, str]) -> str:
+    return big_tile_names.get(big_num) or f"Квадрат {big_num:03d} (1000x1000)"
+
+
+def _big_tile_document_name(big_num: int, big_tile_names: dict[int, str]) -> str:
+    return big_tile_names.get(big_num) or f"Квадрат {big_num:03d}"
+
+
+def _big_tile_placemark_name(big_num: int, big_tile_names: dict[int, str]) -> str:
+    return big_tile_names.get(big_num) or f"{big_num:03d}"
 
 
 def _small_number_for_cell(row: int, col: int, rows: int, cols: int, options: GridOptions) -> int:

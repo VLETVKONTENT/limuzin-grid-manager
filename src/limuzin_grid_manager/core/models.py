@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -58,6 +59,7 @@ class GridOptions:
     include_1000: bool = True
     include_100: bool = True
     snake_big: bool = True
+    big_tile_names: tuple[tuple[int, str], ...] = ()
     small_numbering_mode: SmallNumberingMode = SmallNumberingMode.SNAKE
     small_numbering_direction: SmallNumberingDirection = SmallNumberingDirection.BY_ROWS
     small_numbering_start_corner: StartCorner = StartCorner.NW
@@ -70,6 +72,7 @@ class GridOptions:
             include_1000=self.include_1000,
             include_100=self.include_100,
             snake_big=self.snake_big,
+            big_tile_names=normalize_big_tile_names(self.big_tile_names),
             small_numbering_mode=SmallNumberingMode(self.small_numbering_mode),
             small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction),
             small_numbering_start_corner=StartCorner(self.small_numbering_start_corner),
@@ -109,3 +112,16 @@ class GridStats:
         if self.zone_left != self.zone_right:
             return None
         return self.zone_left
+
+
+def normalize_big_tile_names(
+    value: Mapping[int | str, str] | Iterable[tuple[int | str, str]],
+) -> tuple[tuple[int, str], ...]:
+    items = value.items() if isinstance(value, Mapping) else value
+    names: dict[int, str] = {}
+    for number_value, name_value in items:
+        number = int(number_value)
+        name = str(name_value).strip()
+        if number > 0 and name:
+            names[number] = name
+    return tuple(sorted(names.items()))

@@ -94,7 +94,7 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 
 ## Текущий статус
 
-- Последняя опубликованная версия: `v0.2.0`.
-- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.2.0
+- Последняя опубликованная версия: `v0.3.0`.
+- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v0.3.0
 - Основной источник технического контекста: `GRIDBASE.md`.
 - История версий: `versions/GRIDVERSIONS.md`.

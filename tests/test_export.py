@@ -62,7 +62,10 @@ def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
         tile = zf.read("tile_001.kml").decode("utf-8")
 
     root = ElementTree.fromstring(tile)
+    document_name = root.find(".//{http://www.opengis.net/kml/2.2}Document/{http://www.opengis.net/kml/2.2}name")
     placemarks = root.findall(".//{http://www.opengis.net/kml/2.2}Placemark")
+    assert document_name is not None
+    assert document_name.text == "Квадрат 001"
     assert len(placemarks) == 101
 
 
@@ -113,6 +116,64 @@ def test_export_uses_spiral_small_numbering(tmp_path: Path) -> None:
     ]
     assert placemark_names[0] == "001"
     assert placemark_names[1:11] == ["73", "74", "75", "76", "77", "78", "79", "80", "81", "82"]
+
+
+def test_export_uses_custom_big_tile_name_without_changing_small_numbers(tmp_path: Path) -> None:
+    out_path = tmp_path / "renamed.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        big_tile_names=((1, "Северный участок & A"),),
+        small_numbering_mode=SmallNumberingMode.LINEAR,
+        small_numbering_direction=SmallNumberingDirection.BY_ROWS,
+        small_numbering_start_corner=StartCorner.NE,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+    folder_names = [
+        node.text
+        for node in root.findall(".//{http://www.opengis.net/kml/2.2}Folder/{http://www.opengis.net/kml/2.2}name")
+    ]
+    placemark_names = [
+        node.text
+        for node in root.findall(".//{http://www.opengis.net/kml/2.2}Placemark/{http://www.opengis.net/kml/2.2}name")
+    ]
+    assert folder_names[0] == "Северный участок & A"
+    assert placemark_names[0] == "Северный участок & A"
+    assert placemark_names[1:11] == ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]
+
+
+def test_zip_keeps_standard_filename_with_custom_big_tile_name(tmp_path: Path) -> None:
+    out_path = tmp_path / "renamed.zip"
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=True,
+        big_tile_names=((1, "Северный участок"),),
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.ZIP,
+    )
+
+    write_zip_per_big_tile(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    with zipfile.ZipFile(out_path) as zf:
+        assert zf.namelist() == ["tile_001.kml"]
+        tile = zf.read("tile_001.kml").decode("utf-8")
+
+    root = ElementTree.fromstring(tile)
+    document_name = root.find(".//{http://www.opengis.net/kml/2.2}Document/{http://www.opengis.net/kml/2.2}name")
+    placemark_names = [
+        node.text
+        for node in root.findall(".//{http://www.opengis.net/kml/2.2}Placemark/{http://www.opengis.net/kml/2.2}name")
+    ]
+    assert document_name is not None
+    assert document_name.text == "Северный участок"
+    assert placemark_names == ["Северный участок"]
 
 
 def test_zone_crossing_raises(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ from limuzin_grid_manager.core.models import (
     SmallNumberingMode,
     SpiralDirection,
     StartCorner,
+    normalize_big_tile_names,
 )
 from limuzin_grid_manager.core.numbering import small_number, small_number_index
 
@@ -28,6 +29,7 @@ __all__ = [
     "StartCorner",
     "count_grid",
     "normalize_bounds",
+    "normalize_big_tile_names",
     "rect_corners_ck42",
     "round_bounds",
     "small_number",

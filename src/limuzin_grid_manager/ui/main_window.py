@@ -2,18 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -24,6 +27,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -67,6 +72,64 @@ class ExportWorker(QObject):
             self.finished.emit(str(self._out_path))
 
 
+class BigTileNamesDialog(QDialog):
+    def __init__(self, big_numbers: list[int], names: dict[int, str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Имена квадратов")
+        self.resize(620, 520)
+
+        layout = QVBoxLayout(self)
+
+        note = QLabel(
+            "Пустое имя оставляет стандартное название. Переименование не меняет номера 100x100 внутри квадрата."
+        )
+        note.setObjectName("Hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.table = QTableWidget(len(big_numbers), 3, self)
+        self.table.setHorizontalHeaderLabels(["Номер", "Пользовательское имя", "Сброс"])
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
+        for row, number in enumerate(big_numbers):
+            number_item = QTableWidgetItem(f"{number:03d}")
+            number_item.setFlags(number_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 0, number_item)
+            self.table.setItem(row, 1, QTableWidgetItem(names.get(number, "")))
+
+            reset_button = QPushButton("Сброс")
+            reset_button.clicked.connect(lambda _checked=False, row=row: self._clear_name(row))
+            self.table.setCellWidget(row, 2, reset_button)
+
+        layout.addWidget(self.table, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def names(self) -> dict[int, str]:
+        result: dict[int, str] = {}
+        for row in range(self.table.rowCount()):
+            number_item = self.table.item(row, 0)
+            name_item = self.table.item(row, 1)
+            if number_item is None or name_item is None:
+                continue
+            name = name_item.text().strip()
+            if name:
+                result[int(number_item.text())] = name
+        return result
+
+    def _clear_name(self, row: int) -> None:
+        item = self.table.item(row, 1)
+        if item is not None:
+            item.setText("")
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -80,6 +143,7 @@ class MainWindow(QMainWindow):
         self._last_output_path: Path | None = None
         self._thread: QThread | None = None
         self._worker: ExportWorker | None = None
+        self.big_tile_names: dict[int, str] = {}
 
         self._build_ui()
         self._connect_signals()
@@ -128,6 +192,7 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(self._build_coordinates_group())
         left_layout.addWidget(self._build_grid_group())
+        left_layout.addWidget(self._build_big_tile_names_group())
         left_layout.addWidget(self._build_export_group())
         left_layout.addStretch(1)
 
@@ -266,6 +331,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(note)
         return group
 
+    def _build_big_tile_names_group(self) -> QGroupBox:
+        group = QGroupBox("Имена квадратов")
+        layout = QVBoxLayout(group)
+
+        self.big_tile_names_summary = QLabel("Переименований нет.")
+        self.big_tile_names_summary.setObjectName("Hint")
+        self.big_tile_names_summary.setWordWrap(True)
+        layout.addWidget(self.big_tile_names_summary)
+
+        self.big_tile_names_button = QPushButton("Настроить имена 1000x1000")
+        self.big_tile_names_button.setToolTip("Открыть таблицу пользовательских имен больших квадратов.")
+        layout.addWidget(self.big_tile_names_button)
+
+        note = QLabel("Имена применяются только к квадратам 1000x1000. Файлы ZIP остаются tile_###.kml.")
+        note.setObjectName("Hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        return group
+
     def _build_export_group(self) -> QGroupBox:
         group = QGroupBox("Экспорт")
         layout = QVBoxLayout(group)
@@ -320,6 +404,7 @@ class MainWindow(QMainWindow):
         self.small_numbering_start.currentIndexChanged.connect(self._schedule_stats_update)
         self.export_kml.toggled.connect(self._schedule_stats_update)
         self.generate_button.clicked.connect(self.generate)
+        self.big_tile_names_button.clicked.connect(self.open_big_tile_names_dialog)
         self.open_folder_button.clicked.connect(self.open_output_folder)
 
     def _schedule_stats_update(self) -> None:
@@ -362,6 +447,7 @@ class MainWindow(QMainWindow):
             include_1000=self.include_1000.isChecked(),
             include_100=self.include_100.isChecked(),
             snake_big=self.snake_big.isChecked(),
+            big_tile_names=tuple(sorted(self.big_tile_names.items())),
             small_numbering_mode=SmallNumberingMode(self.small_numbering_mode.currentData()),
             small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction.currentData()),
             small_numbering_start_corner=StartCorner(self.small_numbering_start.currentData()),
@@ -378,10 +464,13 @@ class MainWindow(QMainWindow):
             stats = calculate_grid_stats(bounds, options)
             self.stats_text.setPlainText(_format_stats(stats, options))
             self.generate_button.setEnabled(not stats.errors and self._thread is None)
+            self._update_big_tile_names_summary(stats, options)
             self.status_label.setText("Есть ошибки" if stats.errors else "Готово к генерации")
         except Exception as exc:
             self.stats_text.setPlainText(f"Ошибка ввода: {exc}")
             self.generate_button.setEnabled(False)
+            self.big_tile_names_button.setEnabled(False)
+            self.big_tile_names_summary.setText("Имена 1000x1000 доступны после корректного расчета сетки.")
             self.status_label.setText("Проверьте координаты")
 
     @Slot()
@@ -422,6 +511,47 @@ class MainWindow(QMainWindow):
             return None
         return Path(selected)
 
+    @Slot()
+    def open_big_tile_names_dialog(self) -> None:
+        try:
+            bounds = self._current_bounds()
+            options = self._current_options()
+            stats = calculate_grid_stats(bounds, options)
+        except Exception as exc:
+            QMessageBox.warning(self, "Имена квадратов", str(exc))
+            return
+
+        if stats.errors:
+            QMessageBox.warning(self, "Имена квадратов", "\n".join(stats.errors))
+            return
+        if stats.big_grid is None:
+            QMessageBox.information(self, "Имена квадратов", "Включите сетку 1000x1000, чтобы задать имена.")
+            return
+
+        numbers = list(range(1, stats.big_grid.total + 1))
+        dialog = BigTileNamesDialog(numbers, self.big_tile_names, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.big_tile_names = dialog.names()
+            self.update_stats()
+
+    def _update_big_tile_names_summary(self, stats: GridStats, options: GridOptions) -> None:
+        if not options.include_1000:
+            self.big_tile_names_button.setEnabled(False)
+            self.big_tile_names_summary.setText("Включите сетку 1000x1000, чтобы задать имена.")
+            return
+
+        if stats.big_grid is None or stats.errors:
+            self.big_tile_names_button.setEnabled(False)
+            self.big_tile_names_summary.setText("Имена 1000x1000 доступны после корректного расчета сетки.")
+            return
+
+        renamed_count = _renamed_big_tile_count(options, stats)
+        self.big_tile_names_button.setEnabled(self._thread is None)
+        if renamed_count:
+            self.big_tile_names_summary.setText(f"Переименовано: {renamed_count} из {stats.big_grid.total}.")
+        else:
+            self.big_tile_names_summary.setText(f"Переименований нет. Доступно квадратов: {stats.big_grid.total}.")
+
     def _start_export(self, out_path: Path, bounds: Bounds, options: GridOptions) -> None:
         self._thread = QThread(self)
         self._worker = ExportWorker(out_path, bounds, options)
@@ -442,6 +572,7 @@ class MainWindow(QMainWindow):
 
     def _set_export_running(self, running: bool) -> None:
         self.generate_button.setEnabled(not running)
+        self.big_tile_names_button.setEnabled(not running and self.include_1000.isChecked())
         self.progress.setVisible(running)
         self.progress.setRange(0, 0)
         self.status_label.setText("Генерация..." if running else "Готово")
@@ -569,6 +700,9 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
         )
         if options.include_100:
             lines.append(f"100x100 внутри 1000x1000: {stats.big_grid.total * 100} квадратов.")
+        renamed_count = _renamed_big_tile_count(options, stats)
+        if renamed_count:
+            lines.append(f"Переименовано 1000x1000: {renamed_count}.")
     elif stats.small_grid is not None:
         lines.append(
             f"100x100: {stats.small_grid.rows} ряд. x {stats.small_grid.cols} кол. = "
@@ -605,6 +739,13 @@ def _format_small_numbering_options(options: GridOptions) -> str:
         f"{_small_direction_label(options.small_numbering_direction)}, "
         f"старт {options.small_numbering_start_corner}"
     )
+
+
+def _renamed_big_tile_count(options: GridOptions, stats: GridStats) -> int:
+    if stats.big_grid is None:
+        return 0
+    total = stats.big_grid.total
+    return sum(1 for number, _name in options.big_tile_names if 1 <= number <= total)
 
 
 def _small_numbering_label(mode: SmallNumberingMode) -> str:
