@@ -6,6 +6,8 @@ from limuzin_grid_manager.core.crs import infer_gk_zone
 from limuzin_grid_manager.core.geometry import normalize_bounds, rect_corners_ck42, round_bounds, snake_index
 from limuzin_grid_manager.core.models import (
     Bounds,
+    ExportMode,
+    GridOptions,
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
@@ -13,6 +15,7 @@ from limuzin_grid_manager.core.models import (
     StartCorner,
 )
 from limuzin_grid_manager.core.numbering import small_number_index
+from limuzin_grid_manager.core.stats import calculate_grid_stats, estimate_export_placemarks, estimate_export_size_bytes
 
 
 def test_infer_gk_zone() -> None:
@@ -130,3 +133,27 @@ def test_small_numbering_has_no_duplicates_for_10x10_modes() -> None:
                         for col in range(10)
                     }
                     assert values == set(range(100))
+
+
+def test_large_export_warnings_and_limit_are_reported() -> None:
+    options = GridOptions(
+        include_1000=False,
+        include_100=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+    large_bounds = Bounds(5_800_000, 5_700_000, 6_650_000, 6_670_000)
+
+    stats = calculate_grid_stats(large_bounds, options)
+
+    assert not stats.errors
+    assert estimate_export_placemarks(stats, options) == 200_000
+    assert estimate_export_size_bytes(stats, options) > 0
+    assert any("Большой экспорт" in warning for warning in stats.warnings)
+    assert any("Предпросмотр" in warning for warning in stats.warnings)
+
+    too_large_bounds = Bounds(5_800_100, 5_700_000, 6_650_000, 6_750_000)
+
+    too_large_stats = calculate_grid_stats(too_large_bounds, options)
+
+    assert any("Экспорт слишком большой" in error for error in too_large_stats.errors)

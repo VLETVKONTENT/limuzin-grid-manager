@@ -16,7 +16,51 @@ from limuzin_grid_manager.core.models import (
     normalize_rgb_color,
 )
 from limuzin_grid_manager.core.numbering import small_number
-from limuzin_grid_manager.core.stats import ensure_exportable
+from limuzin_grid_manager.core.stats import ensure_exportable, estimate_export_placemarks
+
+
+class ExportCancelled(RuntimeError):
+    pass
+
+
+class _ProgressTracker:
+    def __init__(
+        self,
+        progress: Callable[[int, int], None] | None,
+        total: int,
+        cancelled: Callable[[], bool] | None,
+    ) -> None:
+        self._progress = progress
+        self._cancelled = cancelled
+        self._total = max(1, int(total))
+        self._done = 0
+        self._emit_interval = max(1, self._total // 1000)
+        self._next_emit = 0
+        self.check_cancelled()
+        self._emit(force=True)
+
+    def step(self, amount: int = 1) -> None:
+        self.check_cancelled()
+        self._done = min(self._total, self._done + amount)
+        self._emit(force=False)
+        self.check_cancelled()
+
+    def finish(self) -> None:
+        self.check_cancelled()
+        self._done = self._total
+        self._emit(force=True)
+
+    def check_cancelled(self) -> None:
+        if self._cancelled is not None and self._cancelled():
+            raise ExportCancelled("Экспорт отменен пользователем.")
+
+    def _emit(self, force: bool) -> None:
+        if self._progress is None:
+            return
+        if not force and self._done < self._next_emit and self._done < self._total:
+            return
+        self._progress(self._done, self._total)
+        self._next_emit = self._done + self._emit_interval
 
 
 def write_kml_all(
@@ -24,15 +68,14 @@ def write_kml_all(
     bounds: Bounds,
     options: GridOptions,
     progress: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> None:
     options = options.normalized()
     stats = ensure_exportable(bounds, options)
     transformer = make_transformer_for_zone(stats.zone or 0)
     big_tile_names = dict(options.big_tile_names)
     kml_style = options.kml_style
-
-    total_work = max(stats.big_grid.total if stats.big_grid else 1, 1)
-    done = 0
+    tracker = _ProgressTracker(progress, estimate_export_placemarks(stats, options), cancelled)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8", newline="\n") as fh:
@@ -60,6 +103,7 @@ def write_kml_all(
                     transformer,
                     kml_style,
                 )
+                tracker.step()
 
                 if options.include_100:
                     fh.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
@@ -73,11 +117,10 @@ def write_kml_all(
                             transformer,
                             kml_style,
                         )
+                        tracker.step()
                     fh.write("</Folder>\n")
 
                 fh.write("</Folder>\n")
-                done += 1
-                _notify(progress, done, total_work)
         else:
             assert stats.small_bounds is not None
             assert stats.small_grid is not None
@@ -93,9 +136,11 @@ def write_kml_all(
                     transformer,
                     kml_style,
                 )
+                tracker.step()
             fh.write("</Folder>\n")
 
         _write_document_end(fh)
+    tracker.finish()
 
 
 def write_zip_per_big_tile(
@@ -103,6 +148,7 @@ def write_zip_per_big_tile(
     bounds: Bounds,
     options: GridOptions,
     progress: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> None:
     options = options.normalized()
     if not options.include_1000:
@@ -125,20 +171,18 @@ def write_zip_per_big_tile(
     assert stats.big_grid is not None
     transformer = make_transformer_for_zone(stats.zone or 0)
     big_tile_names = dict(options.big_tile_names)
+    tracker = _ProgressTracker(progress, estimate_export_placemarks(stats, options), cancelled)
 
     out_zip_path.parent.mkdir(parents=True, exist_ok=True)
-    total = stats.big_grid.total
-    done = 0
     with ZipFile(out_zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
         for row, col, x_top, y_left in _iter_grid_cells(stats.big_bounds, 1000):
             idx0 = snake_index(row, col, stats.big_grid.cols) if options.snake_big else row * stats.big_grid.cols + col
             big_num = idx0 + 1
             zip_file.writestr(
                 f"tile_{big_num:03d}.kml",
-                _tile_kml(big_num, x_top, y_left, options, transformer, big_tile_names),
+                _tile_kml(big_num, x_top, y_left, options, transformer, big_tile_names, tracker),
             )
-            done += 1
-            _notify(progress, done, total)
+    tracker.finish()
 
 
 def escape_xml(value: str) -> str:
@@ -281,6 +325,7 @@ def _tile_kml(
     options: GridOptions,
     transformer: object,
     big_tile_names: dict[int, str],
+    tracker: _ProgressTracker,
 ) -> str:
     lines: list[str] = []
 
@@ -294,6 +339,7 @@ def _tile_kml(
     kml_style = options.kml_style
     _write_document_start(writer, document_name)
     _write_big_rectangle_placemark(writer, placemark_name, big_num, x_top, y_left, 1000, transformer, kml_style)
+    tracker.step()
     if options.include_100:
         writer.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
         for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
@@ -307,6 +353,7 @@ def _tile_kml(
                 transformer,
                 kml_style,
             )
+            tracker.step()
         writer.write("</Folder>\n")
     _write_document_end(writer)
     return "".join(lines)
@@ -328,11 +375,6 @@ def _iter_subcells(x_top: int, y_left: int) -> Iterator[tuple[int, int, int, int
         for col in range(10):
             small_y_left = y_left + col * 100
             yield row, col, small_x_top, small_y_left
-
-
-def _notify(progress: Callable[[int, int], None] | None, done: int, total: int) -> None:
-    if progress is not None:
-        progress(done, total)
 
 
 def _big_tile_folder_name(big_num: int, big_tile_names: dict[int, str]) -> str:

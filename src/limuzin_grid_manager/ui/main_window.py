@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from limuzin_grid_manager.app.exporter import export_grid, parse_meter
+from limuzin_grid_manager.app.exporter import ExportCancelled, check_free_space_for_export, export_grid, parse_meter
 from limuzin_grid_manager.app.export_formats import (
     available_export_formats,
     default_export_directory,
@@ -73,13 +73,17 @@ from limuzin_grid_manager.core.models import (
     StartCorner,
     normalize_rgb_color,
 )
-from limuzin_grid_manager.core.stats import calculate_grid_stats
+from limuzin_grid_manager.core.stats import calculate_grid_stats, estimate_export_placemarks, estimate_export_size_bytes
 from limuzin_grid_manager.ui.preview import GridPreviewWidget
+
+
+MAX_BIG_TILE_DIALOG_ROWS = 5_000
 
 
 class ExportWorker(QObject):
     finished = Signal(str)
     failed = Signal(str)
+    cancelled = Signal(str)
     progress = Signal(int, int)
 
     def __init__(self, out_path: Path, bounds: Bounds, options: GridOptions) -> None:
@@ -87,15 +91,30 @@ class ExportWorker(QObject):
         self._out_path = out_path
         self._bounds = bounds
         self._options = options
+        self._cancel_requested = False
 
     @Slot()
     def run(self) -> None:
         try:
-            export_grid(self._out_path, self._bounds, self._options, progress=self.progress.emit)
+            export_grid(
+                self._out_path,
+                self._bounds,
+                self._options,
+                progress=self.progress.emit,
+                cancelled=self.is_cancel_requested,
+            )
+        except ExportCancelled as exc:
+            self.cancelled.emit(str(exc))
         except Exception as exc:
             self.failed.emit(str(exc))
         else:
             self.finished.emit(str(self._out_path))
+
+    def cancel(self) -> None:
+        self._cancel_requested = True
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_requested
 
 
 class BigTileNamesDialog(QDialog):
@@ -588,6 +607,10 @@ class MainWindow(QMainWindow):
         self.progress.setMinimumWidth(220)
         footer.addWidget(self.progress)
 
+        self.cancel_export_button = QPushButton("Отменить")
+        self.cancel_export_button.setVisible(False)
+        footer.addWidget(self.cancel_export_button)
+
         footer.addStretch(1)
 
         self.generate_button = QPushButton("Сгенерировать")
@@ -760,9 +783,12 @@ class MainWindow(QMainWindow):
         actions = QHBoxLayout()
         actions.addStretch(1)
         self.export_generate_button = QPushButton("Сгенерировать выбранный экспорт")
+        self.export_cancel_button = QPushButton("Отменить экспорт")
+        self.export_cancel_button.setVisible(False)
         self.export_open_folder_button = QPushButton("Открыть папку результата")
         self.export_open_folder_button.setEnabled(False)
         actions.addWidget(self.export_generate_button)
+        actions.addWidget(self.export_cancel_button)
         actions.addWidget(self.export_open_folder_button)
         layout.addLayout(actions)
 
@@ -951,6 +977,8 @@ class MainWindow(QMainWindow):
         self.export_file_button.clicked.connect(self.choose_export_file)
         self.generate_button.clicked.connect(self.generate)
         self.export_generate_button.clicked.connect(self.generate)
+        self.cancel_export_button.clicked.connect(self.cancel_export)
+        self.export_cancel_button.clicked.connect(self.cancel_export)
         self.big_tile_names_button.clicked.connect(self.open_big_tile_names_dialog)
         self.kml_style_button.clicked.connect(self.open_kml_style_dialog)
         self.preview_fit_button.clicked.connect(self.preview_canvas.fit_to_view)
@@ -1229,10 +1257,10 @@ class MainWindow(QMainWindow):
 
     def _current_bounds(self) -> Bounds:
         return normalize_bounds(
-            parse_meter(self.x_nw.text()),
-            parse_meter(self.y_nw.text()),
-            parse_meter(self.x_se.text()),
-            parse_meter(self.y_se.text()),
+            parse_meter(self.x_nw.text(), "NW X"),
+            parse_meter(self.y_nw.text(), "NW Y"),
+            parse_meter(self.x_se.text(), "SE X"),
+            parse_meter(self.y_se.text(), "SE Y"),
         )
 
     def _current_options(self) -> GridOptions:
@@ -1291,10 +1319,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Проверка", "\n".join(stats.errors))
                 return
 
-            out_path = self._current_output_path(options)
             self._sync_export_filename_suffix()
+            out_path = self._current_output_path(options)
             if out_path.exists() and not self._confirm_overwrite(out_path):
                 return
+            check_free_space_for_export(out_path, stats, options)
         except Exception as exc:
             QMessageBox.critical(self, "Ошибка", str(exc))
             return
@@ -1367,6 +1396,14 @@ class MainWindow(QMainWindow):
         if stats.big_grid is None:
             QMessageBox.information(self, "Имена квадратов", "Включите сетку 1000x1000, чтобы задать имена.")
             return
+        if stats.big_grid.total > MAX_BIG_TILE_DIALOG_ROWS:
+            QMessageBox.warning(
+                self,
+                "Имена квадратов",
+                "В этой области слишком много квадратов 1000x1000 для таблицы имен: "
+                f"{stats.big_grid.total}. Уменьшите область или разбейте ее на несколько проектов.",
+            )
+            return
 
         numbers = list(range(1, stats.big_grid.total + 1))
         dialog = BigTileNamesDialog(numbers, self.big_tile_names, self)
@@ -1381,7 +1418,7 @@ class MainWindow(QMainWindow):
             bounds = self._current_bounds()
             options = self._current_options()
             stats = calculate_grid_stats(bounds, options)
-            if stats.big_grid is not None and not stats.errors:
+            if stats.big_grid is not None and not stats.errors and stats.big_grid.total <= MAX_BIG_TILE_DIALOG_ROWS:
                 big_numbers = list(range(1, stats.big_grid.total + 1))
         except Exception:
             big_numbers = []
@@ -1470,9 +1507,11 @@ class MainWindow(QMainWindow):
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._on_export_finished)
         self._worker.failed.connect(self._on_export_failed)
+        self._worker.cancelled.connect(self._on_export_cancelled)
         self._worker.progress.connect(self._on_export_progress)
         self._worker.finished.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
+        self._worker.cancelled.connect(self._thread.quit)
         self._thread.finished.connect(self._worker.deleteLater)
         self._thread.finished.connect(self._thread.deleteLater)
         self._thread.finished.connect(self._on_export_thread_finished)
@@ -1509,8 +1548,15 @@ class MainWindow(QMainWindow):
             action.setEnabled(not running)
         self.export_open_folder_button.setEnabled(not running and self._last_output_path is not None)
         self.progress.setVisible(running)
-        self.progress.setRange(0, 0)
-        self.status_label.setText("Генерация..." if running else "Готово")
+        if running:
+            self.progress.setRange(0, 0)
+            self.progress.setValue(0)
+        self.cancel_export_button.setVisible(running)
+        self.cancel_export_button.setEnabled(running)
+        self.export_cancel_button.setVisible(running)
+        self.export_cancel_button.setEnabled(running)
+        if running:
+            self.status_label.setText("Генерация...")
 
     @Slot(int, int)
     def _on_export_progress(self, done: int, total: int) -> None:
@@ -1518,6 +1564,15 @@ class MainWindow(QMainWindow):
             self.progress.setRange(0, total)
             self.progress.setValue(done)
             self.status_label.setText(f"Генерация: {done} из {total}")
+
+    @Slot()
+    def cancel_export(self) -> None:
+        if self._worker is None:
+            return
+        self._worker.cancel()
+        self.cancel_export_button.setEnabled(False)
+        self.export_cancel_button.setEnabled(False)
+        self.status_label.setText("Отмена экспорта...")
 
     @Slot(str)
     def _on_export_finished(self, path_value: str) -> None:
@@ -1531,6 +1586,11 @@ class MainWindow(QMainWindow):
     def _on_export_failed(self, message: str) -> None:
         QMessageBox.critical(self, "Ошибка экспорта", message)
         self.status_label.setText("Ошибка экспорта")
+
+    @Slot(str)
+    def _on_export_cancelled(self, message: str) -> None:
+        self.status_label.setText(message)
+        QMessageBox.information(self, "Экспорт отменен", "Экспорт отменен. Незавершенный временный файл удален.")
 
     @Slot()
     def _on_export_thread_finished(self) -> None:
@@ -1547,7 +1607,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._thread is not None:
-            QMessageBox.warning(self, "Экспорт", "Дождитесь завершения экспорта.")
+            QMessageBox.warning(self, "Экспорт", "Идет экспорт. Дождитесь завершения или нажмите «Отменить».")
             event.ignore()
             return
         super().closeEvent(event)
@@ -1712,6 +1772,11 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
             f"{stats.small_grid.total} квадратов."
         )
 
+    placemark_count = estimate_export_placemarks(stats, options)
+    if placemark_count > 0:
+        lines.append(f"Объектов KML к записи: {placemark_count:,}.".replace(",", " "))
+        lines.append(f"Оценка размера результата: около {_format_bytes(estimate_export_size_bytes(stats, options))}.")
+
     lines.append("")
     lines.append(f"KML-стиль: {_format_kml_style_summary(options.kml_style)}")
     if options.include_100:
@@ -1750,6 +1815,18 @@ def _renamed_big_tile_count(options: GridOptions, stats: GridStats) -> int:
         return 0
     total = stats.big_grid.total
     return sum(1 for number, _name in options.big_tile_names if 1 <= number <= total)
+
+
+def _format_bytes(value: int) -> str:
+    units = ("Б", "КБ", "МБ", "ГБ", "ТБ")
+    size = float(max(0, value))
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "Б":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{int(size)} Б"
 
 
 def _small_numbering_label(mode: SmallNumberingMode) -> str:

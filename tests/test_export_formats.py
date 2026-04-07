@@ -44,3 +44,5 @@ def test_export_summary_counts_zip_contents() -> None:
 
     assert "Будет создан 1 ZIP-файл." in summary
     assert "Внутри архива: 4 файла tile_###.kml." in summary
+    assert "Объектов KML к записи: 404." in summary
+    assert "Оценка размера результата:" in summary

@@ -27,12 +27,22 @@ def test_main_window_has_export_tab_and_live_summary() -> None:
         assert window.export_summary.minimumHeight() >= 180
         assert window.project_status.text() == "Новый проект"
         assert window.preset_combo.count() >= 1
+        assert window.cancel_export_button.isHidden()
+        assert window.export_cancel_button.isHidden()
 
         window.export_format.setCurrentIndex(1)
         window.update_stats()
 
         assert window.export_filename.text() == "aq_grid_tiles.zip"
         assert "Внутри архива:" in window.export_summary.toPlainText()
+        assert "Оценка размера результата:" in window.export_summary.toPlainText()
+
+        window._set_export_running(True)
+        assert not window.cancel_export_button.isHidden()
+        assert window.cancel_export_button.isEnabled()
+        assert not window.export_cancel_button.isHidden()
+        assert window.export_cancel_button.isEnabled()
+        window._set_export_running(False)
 
         window.apply_preset("numbering_linear_columns")
         window.update_stats()

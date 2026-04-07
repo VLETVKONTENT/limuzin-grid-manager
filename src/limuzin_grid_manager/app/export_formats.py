@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from limuzin_grid_manager.core.models import ExportMode, GridOptions, GridStats
+from limuzin_grid_manager.core.stats import estimate_export_placemarks, estimate_export_size_bytes
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,12 @@ def format_export_summary(stats: GridStats | None, options: GridOptions, out_pat
         lines.extend(f"- {error}" for error in stats.errors)
         return "\n".join(lines)
 
+    placemark_count = estimate_export_placemarks(stats, options)
+    if placemark_count > 0:
+        lines.append(f"Объектов KML к записи: {placemark_count:,}.".replace(",", " "))
+        lines.append(f"Оценка размера результата: около {_format_bytes(estimate_export_size_bytes(stats, options))}.")
+        lines.append("")
+
     if export_mode == ExportMode.ZIP:
         tile_count = stats.big_grid.total if stats.big_grid is not None else 0
         lines.append(f"Будет создан 1 ZIP-файл.")
@@ -144,3 +151,15 @@ def _plural_files(count: int) -> str:
     if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
         return "файла"
     return "файлов"
+
+
+def _format_bytes(value: int) -> str:
+    units = ("Б", "КБ", "МБ", "ГБ", "ТБ")
+    size = float(max(0, value))
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "Б":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{int(size)} Б"

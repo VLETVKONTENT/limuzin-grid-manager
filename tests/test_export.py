@@ -6,7 +6,9 @@ from xml.etree import ElementTree
 
 import pytest
 
+from limuzin_grid_manager.app.exporter import export_grid
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
+from limuzin_grid_manager.core.kml import ExportCancelled
 from limuzin_grid_manager.core.models import (
     BigTileFillMode,
     Bounds,
@@ -193,6 +195,46 @@ def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
     assert document_name is not None
     assert document_name.text == "Квадрат 001"
     assert len(placemarks) == 101
+
+
+def test_export_progress_counts_big_and_small_placemarks(tmp_path: Path) -> None:
+    out_path = tmp_path / "progress.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+    progress: list[tuple[int, int]] = []
+
+    write_kml_all(out_path, _bounds_2x2_big(), options, progress=lambda done, total: progress.append((done, total)))
+
+    assert progress[0] == (0, 404)
+    assert progress[-1] == (404, 404)
+
+
+def test_export_cancel_removes_temporary_file(tmp_path: Path) -> None:
+    out_path = tmp_path / "cancel.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+    cancel_requested = False
+
+    def progress(done: int, _total: int) -> None:
+        nonlocal cancel_requested
+        if done > 0:
+            cancel_requested = True
+
+    with pytest.raises(ExportCancelled):
+        export_grid(out_path, _bounds_2x2_big(), options, progress=progress, cancelled=lambda: cancel_requested)
+
+    assert not out_path.exists()
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_zip_tile_keeps_custom_kml_style(tmp_path: Path) -> None:

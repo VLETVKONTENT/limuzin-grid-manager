@@ -5,6 +5,17 @@ from limuzin_grid_manager.core.geometry import count_grid, round_bounds
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, GridSize, GridStats, RoundingMode
 
 
+WARN_EXPORT_PLACEMARKS = 100_000
+MAX_EXPORT_PLACEMARKS = 1_000_000
+WARN_ZIP_TILE_FILES = 2_000
+WARN_PREVIEW_CELLS = 80_000
+
+KML_BYTES_PER_PLACEMARK = 1200
+ZIP_BYTES_PER_PLACEMARK = 700
+ZIP_BYTES_PER_TILE = 2048
+EXPORT_SIZE_SAFETY_BYTES = 1_048_576
+
+
 def primary_rounding_step(options: GridOptions) -> int:
     options = options.normalized()
     if options.include_1000 and not options.include_100:
@@ -74,6 +85,8 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
         if options.rounding_mode == RoundingMode.NONE:
             _add_unrounded_warnings(rounded_bounds, options, warnings)
 
+        _add_large_grid_feedback(big_grid, small_grid, options, warnings, errors)
+
     return GridStats(
         raw_bounds=bounds,
         rounded_bounds=rounded_bounds,
@@ -95,6 +108,22 @@ def ensure_exportable(bounds: Bounds, options: GridOptions) -> GridStats:
     return stats
 
 
+def estimate_export_placemarks(stats: GridStats, options: GridOptions) -> int:
+    options = options.normalized()
+    return _estimate_export_placemarks(stats.big_grid, stats.small_grid, options)
+
+
+def estimate_export_size_bytes(stats: GridStats, options: GridOptions) -> int:
+    options = options.normalized()
+    placemark_count = estimate_export_placemarks(stats, options)
+    if placemark_count <= 0:
+        return 0
+    if options.export_mode == ExportMode.ZIP:
+        tile_count = stats.big_grid.total if stats.big_grid is not None else 0
+        return EXPORT_SIZE_SAFETY_BYTES + placemark_count * ZIP_BYTES_PER_PLACEMARK + tile_count * ZIP_BYTES_PER_TILE
+    return EXPORT_SIZE_SAFETY_BYTES + placemark_count * KML_BYTES_PER_PLACEMARK
+
+
 def _add_unrounded_warnings(bounds: Bounds, options: GridOptions, warnings: list[str]) -> None:
     if options.include_1000:
         if bounds.width_m() % 1000 or bounds.height_m() % 1000:
@@ -108,3 +137,69 @@ def _add_unrounded_warnings(bounds: Bounds, options: GridOptions, warnings: list
                 "Границы не кратны 100 м. При режиме без округления неполные остатки "
                 "по краям не попадут в экспорт 100x100."
             )
+
+
+def _add_large_grid_feedback(
+    big_grid: GridSize | None,
+    small_grid: GridSize | None,
+    options: GridOptions,
+    warnings: list[str],
+    errors: list[str],
+) -> None:
+    placemark_count = _estimate_export_placemarks(big_grid, small_grid, options)
+    if placemark_count > MAX_EXPORT_PLACEMARKS:
+        errors.append(
+            "Экспорт слишком большой: получится примерно "
+            f"{_format_int(placemark_count)} объектов KML. Уменьшите область или разбейте ее на несколько экспортов."
+        )
+    elif placemark_count > WARN_EXPORT_PLACEMARKS:
+        warnings.append(
+            "Большой экспорт: получится примерно "
+            f"{_format_int(placemark_count)} объектов KML. Генерация и открытие файла в AlpineQuest могут занять время."
+        )
+
+    if options.export_mode == ExportMode.ZIP and big_grid is not None and big_grid.total > WARN_ZIP_TILE_FILES:
+        warnings.append(
+            "Большой ZIP: внутри будет "
+            f"{_format_int(big_grid.total)} файлов tile_###.kml. Передайте такой архив в AlpineQuest только после проверки."
+        )
+
+    preview_cells = _estimate_preview_cells(big_grid, small_grid, options)
+    if preview_cells > WARN_PREVIEW_CELLS:
+        warnings.append(
+            "Предпросмотр для этой области будет упрощен: часть линий и подписей скрывается, "
+            "чтобы интерфейс оставался отзывчивым."
+        )
+
+
+def _estimate_export_placemarks(
+    big_grid: GridSize | None,
+    small_grid: GridSize | None,
+    options: GridOptions,
+) -> int:
+    options = options.normalized()
+    total = 0
+    if options.include_1000 and big_grid is not None:
+        total += big_grid.total
+        if options.include_100:
+            total += big_grid.total * 100
+    elif options.include_100 and small_grid is not None:
+        total += small_grid.total
+    return total
+
+
+def _estimate_preview_cells(
+    big_grid: GridSize | None,
+    small_grid: GridSize | None,
+    options: GridOptions,
+) -> int:
+    options = options.normalized()
+    if options.include_1000 and big_grid is not None:
+        return big_grid.total
+    if options.include_100 and small_grid is not None:
+        return small_grid.total
+    return 0
+
+
+def _format_int(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
