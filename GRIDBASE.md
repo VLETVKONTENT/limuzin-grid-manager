@@ -41,6 +41,8 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 
 - `pyproject.toml` — зависимости, entry point, настройки тестов.
 - `README.md` — краткая инструкция запуска.
+- `GITHUB.md` — правила работы с GitHub, коммитами, пушами, тегами и релизами.
+- `roadmap.md` — план развития приложения до `v1.0`.
 - `versions/GRIDVERSIONS.md` — индекс версий проекта.
 - `versions/vX.Y.Z.md` — подробные заметки по каждой версии.
 - `build_exe_windows.bat` — сборка Windows EXE через `uv` и PyInstaller.
