@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QTextEdit,
@@ -32,7 +32,16 @@ from PySide6.QtWidgets import (
 from limuzin_grid_manager.app.exporter import export_grid, parse_meter
 from limuzin_grid_manager.app.resources import resource_path
 from limuzin_grid_manager.core.geometry import normalize_bounds
-from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, GridStats, RoundingMode
+from limuzin_grid_manager.core.models import (
+    Bounds,
+    ExportMode,
+    GridOptions,
+    GridStats,
+    RoundingMode,
+    SmallNumberingDirection,
+    SmallNumberingMode,
+    StartCorner,
+)
 from limuzin_grid_manager.core.stats import calculate_grid_stats
 
 
@@ -64,8 +73,8 @@ class MainWindow(QMainWindow):
         icon_path = resource_path("icon.ico")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
-        self.resize(1060, 680)
-        self.setMinimumSize(920, 560)
+        self.resize(1180, 720)
+        self.setMinimumSize(1040, 620)
 
         self._last_output_path: Path | None = None
         self._thread: QThread | None = None
@@ -94,11 +103,18 @@ class MainWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         root_layout.addWidget(splitter, 1)
 
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        left_scroll.setMinimumWidth(460)
+
         left = QWidget()
+        left.setMinimumWidth(430)
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 10, 0)
+        left_layout.setContentsMargins(0, 0, 12, 0)
         left_layout.setSpacing(12)
-        splitter.addWidget(left)
+        left_scroll.setWidget(left)
+        splitter.addWidget(left_scroll)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
@@ -107,6 +123,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([470, 710])
 
         left_layout.addWidget(self._build_coordinates_group())
         left_layout.addWidget(self._build_grid_group())
@@ -186,22 +203,50 @@ class MainWindow(QMainWindow):
         self.include_100.setChecked(True)
         self.snake_big = QCheckBox("Нумерация 1000x1000 змейкой")
         self.snake_big.setChecked(True)
-        self.snake_small = QCheckBox("Нумерация 100x100 змейкой")
-        self.snake_small.setChecked(True)
 
         layout.addWidget(self.include_1000)
         layout.addWidget(self.include_100)
         layout.addSpacing(4)
         layout.addWidget(self.snake_big)
-        layout.addWidget(self.snake_small)
 
-        form = QFormLayout()
-        self.rounding_mode = QComboBox()
+        controls = QVBoxLayout()
+        controls.setSpacing(8)
+
+        controls.addWidget(self._field_label("Округление границ"))
+        self.rounding_mode = self._wide_combo()
         self.rounding_mode.addItem("Внутрь / обрезать", RoundingMode.IN.value)
         self.rounding_mode.addItem("Наружу / расширить", RoundingMode.OUT.value)
         self.rounding_mode.addItem("Без округления", RoundingMode.NONE.value)
-        form.addRow("Округление:", self.rounding_mode)
-        layout.addLayout(form)
+        controls.addWidget(self.rounding_mode)
+
+        small_title = QLabel("Нумерация 100x100")
+        small_title.setObjectName("SectionTitle")
+        controls.addWidget(small_title)
+
+        controls.addWidget(self._field_label("Схема"))
+        self.small_numbering_mode = self._wide_combo()
+        self.small_numbering_mode.addItem("Змейка", SmallNumberingMode.SNAKE.value)
+        self.small_numbering_mode.addItem("Обычная", SmallNumberingMode.LINEAR.value)
+        self.small_numbering_mode.setToolTip("Как присваивать номера малым квадратам 100x100.")
+        controls.addWidget(self.small_numbering_mode)
+
+        controls.addWidget(self._field_label("Направление"))
+        self.small_numbering_direction = self._wide_combo()
+        self.small_numbering_direction.addItem("По строкам", SmallNumberingDirection.BY_ROWS.value)
+        self.small_numbering_direction.addItem("По колонкам", SmallNumberingDirection.BY_COLUMNS.value)
+        self.small_numbering_direction.setToolTip("По строкам или по колонкам внутри сетки 100x100.")
+        controls.addWidget(self.small_numbering_direction)
+
+        controls.addWidget(self._field_label("Стартовый угол"))
+        self.small_numbering_start = self._wide_combo()
+        self.small_numbering_start.addItem("NW — верхний левый", StartCorner.NW.value)
+        self.small_numbering_start.addItem("NE — верхний правый", StartCorner.NE.value)
+        self.small_numbering_start.addItem("SW — нижний левый", StartCorner.SW.value)
+        self.small_numbering_start.addItem("SE — нижний правый", StartCorner.SE.value)
+        self.small_numbering_start.setToolTip("Из какого угла начинается нумерация малых квадратов.")
+        controls.addWidget(self.small_numbering_start)
+
+        layout.addLayout(controls)
 
         note = QLabel("Заливка отключена: KML содержит только стандартные непрозрачные линии.")
         note.setObjectName("Hint")
@@ -230,6 +275,20 @@ class MainWindow(QMainWindow):
         edit.setMinimumWidth(180)
         return edit
 
+    def _wide_combo(self) -> QComboBox:
+        combo = QComboBox()
+        combo.setMinimumWidth(300)
+        combo.setMinimumHeight(34)
+        combo.setMinimumContentsLength(24)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        return combo
+
+    def _field_label(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("FieldLabel")
+        return label
+
     def _connect_signals(self) -> None:
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(180)
@@ -239,10 +298,13 @@ class MainWindow(QMainWindow):
         for edit in (self.x_nw, self.y_nw, self.x_se, self.y_se):
             edit.textChanged.connect(self._schedule_stats_update)
 
-        for widget in (self.include_1000, self.include_100, self.snake_big, self.snake_small):
+        for widget in (self.include_1000, self.include_100, self.snake_big):
             widget.toggled.connect(self._schedule_stats_update)
 
         self.rounding_mode.currentIndexChanged.connect(self._schedule_stats_update)
+        self.small_numbering_mode.currentIndexChanged.connect(self._schedule_stats_update)
+        self.small_numbering_direction.currentIndexChanged.connect(self._schedule_stats_update)
+        self.small_numbering_start.currentIndexChanged.connect(self._schedule_stats_update)
         self.export_kml.toggled.connect(self._schedule_stats_update)
         self.check_button.clicked.connect(self.update_stats)
         self.generate_button.clicked.connect(self.generate)
@@ -266,7 +328,9 @@ class MainWindow(QMainWindow):
             include_1000=self.include_1000.isChecked(),
             include_100=self.include_100.isChecked(),
             snake_big=self.snake_big.isChecked(),
-            snake_small=self.snake_small.isChecked(),
+            small_numbering_mode=SmallNumberingMode(self.small_numbering_mode.currentData()),
+            small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction.currentData()),
+            small_numbering_start_corner=StartCorner(self.small_numbering_start.currentData()),
             rounding_mode=RoundingMode(self.rounding_mode.currentData()),
             export_mode=export_mode,
         )
@@ -407,6 +471,16 @@ class MainWindow(QMainWindow):
                 font-size: 13pt;
                 font-weight: 700;
             }
+            QLabel#SectionTitle {
+                font-size: 11pt;
+                font-weight: 700;
+                margin-top: 8px;
+            }
+            QLabel#FieldLabel {
+                color: #333;
+                font-weight: 600;
+                margin-top: 2px;
+            }
             QGroupBox {
                 font-weight: 600;
                 margin-top: 10px;
@@ -420,6 +494,16 @@ class MainWindow(QMainWindow):
                 border: 1px solid #b8bec8;
                 border-radius: 6px;
                 padding: 6px;
+            }
+            QComboBox {
+                min-height: 30px;
+                padding: 5px 34px 5px 8px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid #b8bec8;
             }
             QPushButton {
                 border-radius: 6px;
@@ -459,6 +543,13 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
 
     lines.append("")
     lines.append("KML-стиль: стандартная непрозрачная линия, заливка отключена.")
+    if options.include_100:
+        lines.append(
+            "Нумерация 100x100: "
+            f"{_small_numbering_label(options.small_numbering_mode)}, "
+            f"{_small_direction_label(options.small_numbering_direction)}, "
+            f"старт {options.small_numbering_start_corner}."
+        )
 
     if stats.warnings:
         lines.append("")
@@ -471,3 +562,15 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
         lines.extend(f"- {error}" for error in stats.errors)
 
     return "\n".join(lines)
+
+
+def _small_numbering_label(mode: SmallNumberingMode) -> str:
+    if mode == SmallNumberingMode.SNAKE:
+        return "змейка"
+    return "обычная"
+
+
+def _small_direction_label(direction: SmallNumberingDirection) -> str:
+    if direction == SmallNumberingDirection.BY_COLUMNS:
+        return "по колонкам"
+    return "по строкам"

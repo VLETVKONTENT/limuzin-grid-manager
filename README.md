@@ -1,116 +1,130 @@
 # LIMUZIN GRID MANAGER
 
-**Version:** `v0.0.1`  
-**Platform:** Windows  
-**Purpose:** KML grid generator for AlpineQuest
+**Текущая версия:** `v0.1.0`  
+**Платформа:** Windows  
+**Назначение:** генератор KML-сеток для AlpineQuest
 
-LIMUZIN GRID MANAGER builds `1000x1000` and `100x100` meter grids from two SK-42 / Pulkovo-42 Gauss-Kruger points and exports them to KML for AlpineQuest.
-
----
-
-## What It Does
-
-- Accepts two points: `NW` (top-left) and `SE` (bottom-right).
-- Uses SK-42 / Pulkovo-42 Gauss-Kruger coordinates in meters.
-- Treats `X` as northing and `Y` as easting.
-- Converts coordinates to WGS84 for KML.
-- Builds `1000x1000`, `100x100`, or combined grids.
-- Numbers squares with optional snake ordering.
-- Exports either:
-  - one combined `.kml`;
-  - a `.zip` with one `tile_###.kml` per `1000x1000` square.
-
-KML style is intentionally simple: standard black outlines, no colored fill, no transparent colored polygons.
+LIMUZIN GRID MANAGER строит сетки `1000x1000` и `100x100` метров по двум точкам в системе СК-42 / Пулково-42, Гаусс-Крюгер, а затем экспортирует результат в KML для использования в AlpineQuest.
 
 ---
 
-## Project Role Notes
+## Возможности
 
-The project idea, testing direction, and user workflow belong to the project author.
+- Ввод двух точек области:
+  - `NW` — верхняя левая точка;
+  - `SE` — нижняя правая точка.
+- Координаты в метрах:
+  - `X` — северинг;
+  - `Y` — восток.
+- Автоматическое преобразование координат СК-42 / Гаусс-Крюгер в WGS84 для KML.
+- Построение сеток:
+  - `1000x1000`;
+  - `100x100`;
+  - `100x100` внутри каждого большого квадрата `1000x1000`.
+- Нумерация больших квадратов `1000x1000` змейкой или стандартным порядком.
+- Гибкая нумерация малых квадратов `100x100`:
+  - обычная;
+  - змейкой;
+  - по строкам;
+  - по колонкам;
+  - старт из углов `NW`, `NE`, `SW`, `SE`.
+- Экспорт:
+  - один общий `.kml`;
+  - `.zip` с отдельным `tile_###.kml` на каждый квадрат `1000x1000`.
 
-Important: the author of the project does not understand the internal code structure and does not maintain the architecture manually. The code structure and implementation were written by Codex (OpenAI) according to the author's requirements and feedback.
-
-For future work, use:
-
-- [`GRIDBASE.md`](GRIDBASE.md) as the technical project memory.
-- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) as the version index.
-- `versions/v*.md` files as detailed version notes.
+KML-стиль по умолчанию остается спокойным и читаемым: стандартные черные линии, без цветной заливки и без полупрозрачных цветных полигонов.
 
 ---
 
-## Interface
+## Интерфейс
 
-The application uses a PySide6 desktop interface:
+Приложение использует PySide6 и сделано как Windows desktop-инструмент.
 
-- left panel: coordinates, grid options, export mode;
-- right panel: live validation, grid statistics, warnings and errors;
-- bottom actions: check, generate, open output folder;
-- export runs in a worker thread so the window does not freeze during large exports.
+Основные зоны интерфейса:
+
+- левая панель: координаты, параметры сетки, схема нумерации, экспорт;
+- правая панель: проверка ввода, статистика, предупреждения и ошибки;
+- нижняя панель: проверка, генерация, открытие папки результата.
+
+Экспорт выполняется в отдельном worker-потоке, чтобы окно не зависало на больших сетках.
 
 ---
 
-## Coordinate Logic
+## Координатная логика
 
-Gauss-Kruger zone is inferred from the easting:
+Зона Гаусса-Крюгера определяется из координаты `Y`:
 
 ```python
 zone = int(abs(y) // 1_000_000)
 epsg = 28400 + zone
 ```
 
-The transformer uses:
+Преобразование выполняется через `pyproj`:
 
-- source CRS: `EPSG:28400 + zone`;
-- destination CRS: `EPSG:4326`;
+- исходная CRS: `EPSG:28400 + zone`;
+- целевая CRS: `EPSG:4326`;
 - `always_xy=True`.
 
-Input order is `X, Y`, but `pyproj` receives `Y, X`:
+Порядок важен:
+
+- пользователь вводит `X, Y`;
+- в `pyproj` передается `Y, X`;
+- в KML записывается `lon,lat,0`.
 
 ```python
 lon, lat = transformer.transform(y, x)
 ```
 
-KML writes coordinates as:
+---
 
-```text
-lon,lat,0
-```
+## Роль автора и Codex
+
+Идея проекта, требования, пользовательские сценарии и проверка результата принадлежат автору проекта.
+
+Важно: автор проекта не разбирается во внутренней структуре кода и не сопровождает архитектуру вручную. Структура проекта и кодовая реализация написаны Codex (OpenAI) по требованиям, уточнениям и обратной связи автора.
+
+Для будущей разработки используются проектные документы:
+
+- [`GRIDBASE.md`](GRIDBASE.md) — техническая база приложения для новых чатов с Codex.
+- [`roadmap.md`](roadmap.md) — план развития до версии `v1.0`.
+- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
+- [`versions/v0.1.0.md`](versions/v0.1.0.md) — описание текущей версии.
 
 ---
 
-## Development
+## Разработка
 
-Install dependencies:
+Установка зависимостей:
 
 ```powershell
 uv sync --extra dev
 ```
 
-Run from source:
+Запуск из исходников:
 
 ```powershell
 uv run limuzin-grid-manager
 ```
 
-Run tests:
+Тесты:
 
 ```powershell
 uv run --extra dev pytest
 ```
 
-Compile check:
+Проверка компиляции:
 
 ```powershell
 uv run --extra dev python -m compileall src tests
 ```
 
-Build Windows EXE:
+Сборка Windows EXE:
 
 ```powershell
 .\build_exe_windows.bat
 ```
 
-The built executable is created at:
+Готовый EXE создается здесь:
 
 ```text
 dist/LIMUZIN_GRID_MANAGER.exe
@@ -118,8 +132,8 @@ dist/LIMUZIN_GRID_MANAGER.exe
 
 ---
 
-## Current Version
+## Текущая версия
 
-Current working version: `v0.0.1`.
+Текущая принятая версия: `v0.1.0`.
 
-See [`versions/v0.0.1.md`](versions/v0.0.1.md) for release notes.
+Изменения версии описаны в [`versions/v0.1.0.md`](versions/v0.1.0.md).

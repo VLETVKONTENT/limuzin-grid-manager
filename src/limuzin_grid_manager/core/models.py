@@ -15,6 +15,23 @@ class ExportMode(StrEnum):
     ZIP = "zip"
 
 
+class SmallNumberingMode(StrEnum):
+    LINEAR = "linear"
+    SNAKE = "snake"
+
+
+class SmallNumberingDirection(StrEnum):
+    BY_ROWS = "by_rows"
+    BY_COLUMNS = "by_columns"
+
+
+class StartCorner(StrEnum):
+    NW = "NW"
+    NE = "NE"
+    SW = "SW"
+    SE = "SE"
+
+
 @dataclass(frozen=True)
 class Bounds:
     x_top: int
@@ -34,7 +51,9 @@ class GridOptions:
     include_1000: bool = True
     include_100: bool = True
     snake_big: bool = True
-    snake_small: bool = True
+    small_numbering_mode: SmallNumberingMode = SmallNumberingMode.SNAKE
+    small_numbering_direction: SmallNumberingDirection = SmallNumberingDirection.BY_ROWS
+    small_numbering_start_corner: StartCorner = StartCorner.NW
     rounding_mode: RoundingMode = RoundingMode.IN
     export_mode: ExportMode = ExportMode.KML
 
@@ -43,7 +62,9 @@ class GridOptions:
             include_1000=self.include_1000,
             include_100=self.include_100,
             snake_big=self.snake_big,
-            snake_small=self.snake_small,
+            small_numbering_mode=SmallNumberingMode(self.small_numbering_mode),
+            small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction),
+            small_numbering_start_corner=StartCorner(self.small_numbering_start_corner),
             rounding_mode=RoundingMode(self.rounding_mode),
             export_mode=ExportMode(self.export_mode),
         )

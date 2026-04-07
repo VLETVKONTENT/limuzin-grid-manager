@@ -7,7 +7,15 @@ from xml.etree import ElementTree
 import pytest
 
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
-from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, RoundingMode
+from limuzin_grid_manager.core.models import (
+    Bounds,
+    ExportMode,
+    GridOptions,
+    RoundingMode,
+    SmallNumberingDirection,
+    SmallNumberingMode,
+    StartCorner,
+)
 
 
 def _bounds_2x2_big() -> Bounds:
@@ -20,7 +28,6 @@ def test_write_kml_all_is_xml_without_colored_fill(tmp_path: Path) -> None:
         include_1000=True,
         include_100=True,
         snake_big=True,
-        snake_small=True,
         rounding_mode=RoundingMode.NONE,
         export_mode=ExportMode.KML,
     )
@@ -43,7 +50,6 @@ def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
         include_1000=True,
         include_100=True,
         snake_big=True,
-        snake_small=True,
         rounding_mode=RoundingMode.NONE,
         export_mode=ExportMode.ZIP,
     )
@@ -59,12 +65,35 @@ def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
     assert len(placemarks) == 101
 
 
+def test_export_uses_custom_small_numbering(tmp_path: Path) -> None:
+    out_path = tmp_path / "custom.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        small_numbering_mode=SmallNumberingMode.LINEAR,
+        small_numbering_direction=SmallNumberingDirection.BY_ROWS,
+        small_numbering_start_corner=StartCorner.NE,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+    placemark_names = [
+        node.text
+        for node in root.findall(".//{http://www.opengis.net/kml/2.2}Placemark/{http://www.opengis.net/kml/2.2}name")
+    ]
+    assert placemark_names[0] == "001"
+    assert placemark_names[1:11] == ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]
+
+
 def test_zone_crossing_raises(tmp_path: Path) -> None:
     options = GridOptions(
         include_1000=True,
         include_100=False,
         snake_big=True,
-        snake_small=True,
         rounding_mode=RoundingMode.NONE,
         export_mode=ExportMode.KML,
     )

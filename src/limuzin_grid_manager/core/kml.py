@@ -8,6 +8,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from limuzin_grid_manager.core.crs import ck42_to_wgs84, make_transformer_for_zone
 from limuzin_grid_manager.core.geometry import rect_corners_ck42, snake_index
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions
+from limuzin_grid_manager.core.numbering import small_number
 from limuzin_grid_manager.core.stats import ensure_exportable
 
 LINE_COLOR = "ff000000"
@@ -45,10 +46,9 @@ def write_kml_all(
                 if options.include_100:
                     fh.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
                     for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
-                        sidx0 = snake_index(small_row, small_col, 10) if options.snake_small else small_row * 10 + small_col
                         _write_rectangle_placemark(
                             fh,
-                            str(sidx0 + 1),
+                            str(_small_number_for_cell(small_row, small_col, 10, 10, options)),
                             small_x_top,
                             small_y_left,
                             100,
@@ -65,8 +65,8 @@ def write_kml_all(
             assert stats.small_grid is not None
             fh.write("<Folder><name>Сетка 100x100</name><open>1</open>\n")
             for row, col, x_top, y_left in _iter_grid_cells(stats.small_bounds, 100):
-                idx0 = snake_index(row, col, stats.small_grid.cols) if options.snake_small else row * stats.small_grid.cols + col
-                _write_rectangle_placemark(fh, str(idx0 + 1), x_top, y_left, 100, 1, transformer)
+                small_name = _small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
+                _write_rectangle_placemark(fh, str(small_name), x_top, y_left, 100, 1, transformer)
             fh.write("</Folder>\n")
 
         _write_document_end(fh)
@@ -85,7 +85,9 @@ def write_zip_per_big_tile(
         include_1000=True,
         include_100=options.include_100,
         snake_big=options.snake_big,
-        snake_small=options.snake_small,
+        small_numbering_mode=options.small_numbering_mode,
+        small_numbering_direction=options.small_numbering_direction,
+        small_numbering_start_corner=options.small_numbering_start_corner,
         rounding_mode=options.rounding_mode,
         export_mode=ExportMode.ZIP,
     )
@@ -103,7 +105,7 @@ def write_zip_per_big_tile(
             big_num = idx0 + 1
             zip_file.writestr(
                 f"tile_{big_num:03d}.kml",
-                _tile_kml(big_num, x_top, y_left, options.include_100, options.snake_small, transformer),
+                _tile_kml(big_num, x_top, y_left, options, transformer),
             )
             done += 1
             _notify(progress, done, total)
@@ -180,8 +182,7 @@ def _tile_kml(
     big_num: int,
     x_top: int,
     y_left: int,
-    include_100: bool,
-    snake_small: bool,
+    options: GridOptions,
     transformer: object,
 ) -> str:
     lines: list[str] = []
@@ -193,11 +194,11 @@ def _tile_kml(
     writer = ListWriter()
     _write_document_start(writer, f"Квадрат {big_num:03d}")
     _write_rectangle_placemark(writer, f"{big_num:03d}", x_top, y_left, 1000, 2, transformer)
-    if include_100:
+    if options.include_100:
         writer.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
         for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
-            sidx0 = snake_index(small_row, small_col, 10) if snake_small else small_row * 10 + small_col
-            _write_rectangle_placemark(writer, str(sidx0 + 1), small_x_top, small_y_left, 100, 1, transformer)
+            small_name = _small_number_for_cell(small_row, small_col, 10, 10, options)
+            _write_rectangle_placemark(writer, str(small_name), small_x_top, small_y_left, 100, 1, transformer)
         writer.write("</Folder>\n")
     _write_document_end(writer)
     return "".join(lines)
@@ -224,3 +225,15 @@ def _iter_subcells(x_top: int, y_left: int) -> Iterator[tuple[int, int, int, int
 def _notify(progress: Callable[[int, int], None] | None, done: int, total: int) -> None:
     if progress is not None:
         progress(done, total)
+
+
+def _small_number_for_cell(row: int, col: int, rows: int, cols: int, options: GridOptions) -> int:
+    return small_number(
+        row,
+        col,
+        rows,
+        cols,
+        options.small_numbering_mode,
+        options.small_numbering_direction,
+        options.small_numbering_start_corner,
+    )

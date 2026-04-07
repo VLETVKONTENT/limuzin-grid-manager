@@ -4,7 +4,8 @@ import pytest
 
 from limuzin_grid_manager.core.crs import infer_gk_zone
 from limuzin_grid_manager.core.geometry import normalize_bounds, rect_corners_ck42, round_bounds, snake_index
-from limuzin_grid_manager.core.models import Bounds, RoundingMode
+from limuzin_grid_manager.core.models import Bounds, RoundingMode, SmallNumberingDirection, SmallNumberingMode, StartCorner
+from limuzin_grid_manager.core.numbering import small_number_index
 
 
 def test_infer_gk_zone() -> None:
@@ -56,3 +57,32 @@ def test_normalize_bounds() -> None:
         y_left=200,
         y_right=400,
     )
+
+
+def test_small_numbering_default_matches_old_snake() -> None:
+    values = [small_number_index(1, col, 2, 4, "snake", "by_rows", "NW") for col in range(4)]
+    assert values == [7, 6, 5, 4]
+
+
+def test_small_numbering_row_linear_from_each_corner() -> None:
+    assert small_number_index(0, 0, 2, 3, SmallNumberingMode.LINEAR, SmallNumberingDirection.BY_ROWS, StartCorner.NW) == 0
+    assert small_number_index(0, 2, 2, 3, SmallNumberingMode.LINEAR, SmallNumberingDirection.BY_ROWS, StartCorner.NE) == 0
+    assert small_number_index(1, 0, 2, 3, SmallNumberingMode.LINEAR, SmallNumberingDirection.BY_ROWS, StartCorner.SW) == 0
+    assert small_number_index(1, 2, 2, 3, SmallNumberingMode.LINEAR, SmallNumberingDirection.BY_ROWS, StartCorner.SE) == 0
+
+
+def test_small_numbering_column_snake() -> None:
+    values = [small_number_index(row, 1, 3, 2, "snake", "by_columns", "NW") for row in range(3)]
+    assert values == [5, 4, 3]
+
+
+def test_small_numbering_has_no_duplicates_for_10x10_modes() -> None:
+    for mode in SmallNumberingMode:
+        for direction in SmallNumberingDirection:
+            for corner in StartCorner:
+                values = {
+                    small_number_index(row, col, 10, 10, mode, direction, corner)
+                    for row in range(10)
+                    for col in range(10)
+                }
+                assert values == set(range(100))
