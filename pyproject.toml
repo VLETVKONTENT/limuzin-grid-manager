@@ -1,0 +1,30 @@
+[project]
+name = "limuzin-grid-manager"
+version = "0.0.1"
+description = "Windows KML grid generator for AlpineQuest using SK-42 / Pulkovo-42 Gauss-Kruger coordinates."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "PySide6>=6.8",
+    "pyproj>=3.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+limuzin-grid-manager = "limuzin_grid_manager.__main__:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/limuzin_grid_manager"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
