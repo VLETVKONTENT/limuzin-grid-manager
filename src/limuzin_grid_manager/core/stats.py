@@ -54,7 +54,12 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
     if rounded_bounds is not None:
         zone_left = infer_gk_zone(rounded_bounds.y_left)
         zone_right = infer_gk_zone(rounded_bounds.y_right)
-        if zone_left != zone_right:
+        if not (1 <= zone_left <= 32) or not (1 <= zone_right <= 32):
+            errors.append(
+                "Некорректная зона Гаусса-Крюгера: "
+                f"слева зона {zone_left}, справа зона {zone_right}. Ожидается 1..32."
+            )
+        elif zone_left != zone_right:
             errors.append(
                 "Область пересекает границу зон Гаусса-Крюгера: "
                 f"слева зона {zone_left}, справа зона {zone_right}. Разбейте область по зонам."

@@ -305,9 +305,9 @@ def grid_options_to_dict(options: GridOptions) -> dict[str, Any]:
 def grid_options_from_dict(data: object) -> GridOptions:
     source = _require_mapping(data, "Настройки сетки")
     return GridOptions(
-        include_1000=bool(source.get("include_1000", True)),
-        include_100=bool(source.get("include_100", True)),
-        snake_big=bool(source.get("snake_big", True)),
+        include_1000=_bool_from_data(source, "include_1000", True),
+        include_100=_bool_from_data(source, "include_100", True),
+        snake_big=_bool_from_data(source, "snake_big", True),
         big_tile_names=_named_pairs_from_data(source.get("big_tile_names", ()), "name"),
         small_numbering_mode=SmallNumberingMode(source.get("small_numbering_mode", SmallNumberingMode.SNAKE.value)),
         small_numbering_direction=SmallNumberingDirection(
@@ -353,10 +353,17 @@ def kml_style_from_dict(data: object) -> KmlStyle:
         big_fill_opacity=int(source.get("big_fill_opacity", 35)),
         big_fill_palette=tuple(str(color) for color in _sequence_from_data(source.get("big_fill_palette", ()))),
         custom_big_fill_colors=_named_pairs_from_data(source.get("custom_big_fill_colors", ()), "color"),
-        small_fill_enabled=bool(source.get("small_fill_enabled", False)),
+        small_fill_enabled=_bool_from_data(source, "small_fill_enabled", False),
         small_fill_color=str(source.get("small_fill_color", "#90caf9")),
         small_fill_opacity=int(source.get("small_fill_opacity", 25)),
     ).normalized()
+
+
+def _bool_from_data(source: Mapping[str, Any], key: str, default: bool) -> bool:
+    value = source.get(key, default)
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{key}: ожидалось true/false.")
 
 
 def _named_pairs_from_data(data: object, value_key: str) -> tuple[tuple[int, str], ...]:
@@ -366,6 +373,8 @@ def _named_pairs_from_data(data: object, value_key: str) -> tuple[tuple[int, str
     pairs: list[tuple[int, str]] = []
     for item in items:
         if isinstance(item, Mapping):
+            if "number" not in item or value_key not in item:
+                raise ValueError(f"Некорректная запись списка: {item!r}")
             pairs.append((int(item["number"]), str(item[value_key])))
         elif isinstance(item, Sequence) and not isinstance(item, str) and len(item) == 2:
             number, value = item

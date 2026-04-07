@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from limuzin_grid_manager.app.project import (
@@ -84,6 +86,50 @@ def test_project_loader_reports_unknown_schema(tmp_path) -> None:
     path.write_text('{"schema": "old"}', encoding="utf-8")
 
     with pytest.raises(ProjectFileError, match="неподдерживаемый формат"):
+        load_project_state(path)
+
+
+def test_project_loader_rejects_string_booleans(tmp_path) -> None:
+    path = tmp_path / "string-bool.lgm.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "limuzin-grid-manager-project",
+                "schema_version": 1,
+                "coordinates": {},
+                "options": {
+                    "include_1000": "false",
+                },
+                "export": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectFileError, match="include_1000"):
+        load_project_state(path)
+
+
+def test_project_loader_reports_malformed_named_pairs(tmp_path) -> None:
+    path = tmp_path / "bad-pairs.lgm.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "limuzin-grid-manager-project",
+                "schema_version": 1,
+                "coordinates": {},
+                "options": {
+                    "big_tile_names": [{"name": "Север"}],
+                },
+                "export": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectFileError, match="Некорректная запись списка"):
         load_project_state(path)
 
 

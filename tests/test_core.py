@@ -157,3 +157,15 @@ def test_large_export_warnings_and_limit_are_reported() -> None:
     too_large_stats = calculate_grid_stats(too_large_bounds, options)
 
     assert any("Экспорт слишком большой" in error for error in too_large_stats.errors)
+
+
+def test_invalid_gk_zone_is_reported_in_stats() -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+    stats = calculate_grid_stats(Bounds(1_000, 0, 33_100_000, 33_101_000), options)
+
+    assert any("Некорректная зона Гаусса-Крюгера" in error for error in stats.errors)
