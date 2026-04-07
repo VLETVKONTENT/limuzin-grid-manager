@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtGui import QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -38,15 +40,19 @@ from limuzin_grid_manager.app.exporter import export_grid, parse_meter
 from limuzin_grid_manager.app.resources import resource_path
 from limuzin_grid_manager.core.geometry import normalize_bounds
 from limuzin_grid_manager.core.models import (
+    BigTileFillMode,
     Bounds,
+    DEFAULT_BIG_FILL_PALETTE,
     ExportMode,
     GridOptions,
     GridStats,
+    KmlStyle,
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
     SpiralDirection,
     StartCorner,
+    normalize_rgb_color,
 )
 from limuzin_grid_manager.core.stats import calculate_grid_stats
 
@@ -130,6 +136,313 @@ class BigTileNamesDialog(QDialog):
             item.setText("")
 
 
+class ColorButton(QPushButton):
+    colorChanged = Signal(str)
+
+    def __init__(self, color: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color = "#000000"
+        self.clicked.connect(self._pick_color)
+        self.set_color(color)
+
+    def color(self) -> str:
+        return self._color
+
+    def set_color(self, color: str) -> None:
+        self._color = normalize_rgb_color(color)
+        self.setText(self._color.upper())
+        self.setStyleSheet(_color_button_stylesheet(self._color))
+
+    def _pick_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self._color), self, "Выберите цвет")
+        if color.isValid():
+            self.set_color(color.name())
+            self.colorChanged.emit(self._color)
+
+
+class OptionalColorButton(QPushButton):
+    colorChanged = Signal()
+
+    def __init__(self, color: str | None, fallback_color: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color = normalize_rgb_color(color) if color else None
+        self._fallback_color = normalize_rgb_color(fallback_color)
+        self.clicked.connect(self._pick_color)
+        self._refresh()
+
+    def color(self) -> str | None:
+        return self._color
+
+    def set_fallback_color(self, color: str) -> None:
+        self._fallback_color = normalize_rgb_color(color)
+        self._refresh()
+
+    def clear_color(self) -> None:
+        self._color = None
+        self._refresh()
+        self.colorChanged.emit()
+
+    def _pick_color(self) -> None:
+        initial = QColor(self._color or self._fallback_color)
+        color = QColorDialog.getColor(initial, self, "Выберите цвет квадрата")
+        if color.isValid():
+            self._color = normalize_rgb_color(color.name())
+            self._refresh()
+            self.colorChanged.emit()
+
+    def _refresh(self) -> None:
+        if self._color:
+            self.setText(self._color.upper())
+            self.setStyleSheet(_color_button_stylesheet(self._color))
+        else:
+            self.setText("Общий цвет")
+            self.setToolTip(f"Используется общий цвет {self._fallback_color.upper()}.")
+            self.setStyleSheet(
+                "QPushButton { background: #f2f4f8; color: #222; border: 1px solid #b8bec8; }"
+            )
+
+
+class KmlStyleDialog(QDialog):
+    def __init__(self, style: KmlStyle, big_numbers: list[int], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Стиль KML")
+        self.resize(720, 740)
+
+        style = style.normalized()
+        self._big_numbers = big_numbers
+        self._palette = tuple(style.big_fill_palette) or DEFAULT_BIG_FILL_PALETTE
+        self._initial_custom_colors = dict(style.custom_big_fill_colors)
+        self._custom_color_buttons: list[OptionalColorButton] = []
+
+        layout = QVBoxLayout(self)
+
+        note = QLabel(
+            "Линии применяются ко всем квадратам. Заливка 100x100 применяется к каждому малому квадрату, "
+            "но цвет и прозрачность задаются одной общей настройкой."
+        )
+        note.setObjectName("Hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        layout.addWidget(self._build_lines_group(style))
+        layout.addWidget(self._build_small_fill_group(style))
+        layout.addWidget(self._build_fill_group(style), 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self._sync_fill_controls()
+
+    def kml_style(self) -> KmlStyle:
+        custom_colors = dict(self._initial_custom_colors)
+        for row in range(self.custom_palette_table.rowCount()):
+            number_item = self.custom_palette_table.item(row, 0)
+            button = self.custom_palette_table.cellWidget(row, 1)
+            if number_item is None or not isinstance(button, OptionalColorButton):
+                continue
+            number = int(number_item.text())
+            color = button.color()
+            if color:
+                custom_colors[number] = color
+            else:
+                custom_colors.pop(number, None)
+
+        return KmlStyle(
+            big_line_color=self.big_line_color.color(),
+            small_line_color=self.small_line_color.color(),
+            big_line_width=self.big_line_width.value(),
+            small_line_width=self.small_line_width.value(),
+            big_fill_mode=BigTileFillMode(self.fill_mode.currentData()),
+            big_fill_color=self.fill_color.color(),
+            big_fill_opacity=self.fill_opacity.value(),
+            big_fill_palette=self._palette,
+            custom_big_fill_colors=tuple(sorted(custom_colors.items())),
+            small_fill_enabled=self.small_fill_enabled.isChecked(),
+            small_fill_color=self.small_fill_color.color(),
+            small_fill_opacity=self.small_fill_opacity.value(),
+        ).normalized()
+
+    def _build_lines_group(self, style: KmlStyle) -> QGroupBox:
+        group = QGroupBox("Линии")
+        layout = QGridLayout(group)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
+
+        self.big_line_color = ColorButton(style.big_line_color)
+        self.small_line_color = ColorButton(style.small_line_color)
+        self.big_line_width = self._width_spin(style.big_line_width)
+        self.small_line_width = self._width_spin(style.small_line_width)
+
+        layout.addWidget(QLabel("1000x1000: цвет"), 0, 0)
+        layout.addWidget(self.big_line_color, 0, 1)
+        layout.addWidget(QLabel("толщина"), 0, 2)
+        layout.addWidget(self.big_line_width, 0, 3)
+        layout.addWidget(QLabel("100x100: цвет"), 1, 0)
+        layout.addWidget(self.small_line_color, 1, 1)
+        layout.addWidget(QLabel("толщина"), 1, 2)
+        layout.addWidget(self.small_line_width, 1, 3)
+        layout.setColumnStretch(1, 1)
+        return group
+
+    def _build_small_fill_group(self, style: KmlStyle) -> QGroupBox:
+        group = QGroupBox("Заливка 100x100")
+        layout = QVBoxLayout(group)
+
+        self.small_fill_enabled = QCheckBox("Заливать все квадраты 100x100 одним цветом")
+        self.small_fill_enabled.setChecked(style.small_fill_enabled)
+        self.small_fill_enabled.toggled.connect(self._sync_small_fill_controls)
+        layout.addWidget(self.small_fill_enabled)
+
+        controls = QGridLayout()
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(8)
+        layout.addLayout(controls)
+
+        self.small_fill_color_label = QLabel("Цвет")
+        self.small_fill_color = ColorButton(style.small_fill_color)
+        self.small_fill_opacity_label = QLabel("Прозрачность")
+        self.small_fill_opacity = QSpinBox()
+        self.small_fill_opacity.setRange(0, 100)
+        self.small_fill_opacity.setSuffix(" %")
+        self.small_fill_opacity.setValue(style.small_fill_opacity)
+        self.small_fill_opacity.setMinimumHeight(34)
+
+        controls.addWidget(self.small_fill_color_label, 0, 0)
+        controls.addWidget(self.small_fill_color, 0, 1)
+        controls.addWidget(self.small_fill_opacity_label, 0, 2)
+        controls.addWidget(self.small_fill_opacity, 0, 3)
+        controls.setColumnStretch(1, 1)
+
+        note = QLabel("В KML заливка прописывается в каждом малом квадрате; отдельных настроек для каждого 100x100 нет.")
+        note.setObjectName("Hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self._sync_small_fill_controls()
+        return group
+
+    def _build_fill_group(self, style: KmlStyle) -> QGroupBox:
+        group = QGroupBox("Заливка 1000x1000")
+        layout = QVBoxLayout(group)
+
+        controls = QGridLayout()
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(8)
+        layout.addLayout(controls)
+
+        self.fill_mode = self._wide_dialog_combo()
+        self.fill_mode.addItem("Без заливки", BigTileFillMode.NONE.value)
+        self.fill_mode.addItem("Один цвет для всех 1000x1000", BigTileFillMode.SINGLE.value)
+        self.fill_mode.addItem("Палитра по номерам", BigTileFillMode.BY_NUMBER.value)
+        self.fill_mode.addItem("Пользовательская палитра", BigTileFillMode.CUSTOM.value)
+        _select_combo_data(self.fill_mode, style.big_fill_mode.value)
+        self.fill_mode.currentIndexChanged.connect(self._sync_fill_controls)
+
+        self.fill_color_label = QLabel("Общий цвет")
+        self.fill_color = ColorButton(style.big_fill_color)
+        self.fill_color.colorChanged.connect(self._on_fill_color_changed)
+
+        self.fill_opacity_label = QLabel("Прозрачность")
+        self.fill_opacity = QSpinBox()
+        self.fill_opacity.setRange(0, 100)
+        self.fill_opacity.setSuffix(" %")
+        self.fill_opacity.setValue(style.big_fill_opacity)
+        self.fill_opacity.setMinimumHeight(34)
+
+        controls.addWidget(QLabel("Режим"), 0, 0)
+        controls.addWidget(self.fill_mode, 0, 1, 1, 3)
+        controls.addWidget(self.fill_color_label, 1, 0)
+        controls.addWidget(self.fill_color, 1, 1)
+        controls.addWidget(self.fill_opacity_label, 1, 2)
+        controls.addWidget(self.fill_opacity, 1, 3)
+        controls.setColumnStretch(1, 1)
+
+        self.palette_preview = QLabel(_palette_preview_html(self._palette))
+        self.palette_preview.setTextFormat(Qt.TextFormat.RichText)
+        self.palette_preview.setWordWrap(True)
+        layout.addWidget(self.palette_preview)
+
+        self.custom_palette_note = QLabel(
+            "Нажмите цвет у нужного квадрата. Если цвет не задан, используется общий цвет."
+        )
+        self.custom_palette_note.setObjectName("Hint")
+        self.custom_palette_note.setWordWrap(True)
+        layout.addWidget(self.custom_palette_note)
+
+        self.no_big_tiles_note = QLabel(
+            "Пользовательская палитра по квадратам появится после корректного расчета сетки 1000x1000."
+        )
+        self.no_big_tiles_note.setObjectName("Hint")
+        self.no_big_tiles_note.setWordWrap(True)
+        layout.addWidget(self.no_big_tiles_note)
+
+        self.custom_palette_table = QTableWidget(len(self._big_numbers), 3, self)
+        self.custom_palette_table.setHorizontalHeaderLabels(["Номер", "Цвет", "Сброс"])
+        self.custom_palette_table.setAlternatingRowColors(True)
+        self.custom_palette_table.verticalHeader().setVisible(False)
+        self.custom_palette_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.custom_palette_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.custom_palette_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
+        for row, number in enumerate(self._big_numbers):
+            number_item = QTableWidgetItem(f"{number:03d}")
+            number_item.setFlags(number_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.custom_palette_table.setItem(row, 0, number_item)
+
+            color_button = OptionalColorButton(self._initial_custom_colors.get(number), style.big_fill_color)
+            self._custom_color_buttons.append(color_button)
+            self.custom_palette_table.setCellWidget(row, 1, color_button)
+
+            reset_button = QPushButton("Общий")
+            reset_button.clicked.connect(lambda _checked=False, button=color_button: button.clear_color())
+            self.custom_palette_table.setCellWidget(row, 2, reset_button)
+
+        layout.addWidget(self.custom_palette_table, 1)
+        return group
+
+    def _width_spin(self, value: int) -> QSpinBox:
+        spin = QSpinBox()
+        spin.setRange(1, 12)
+        spin.setValue(value)
+        spin.setMinimumHeight(34)
+        return spin
+
+    def _wide_dialog_combo(self) -> QComboBox:
+        combo = QComboBox()
+        combo.setMinimumHeight(34)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        return combo
+
+    def _sync_fill_controls(self, _index: int | None = None) -> None:
+        mode = BigTileFillMode(self.fill_mode.currentData())
+        fill_enabled = mode != BigTileFillMode.NONE
+        uses_general_color = mode in (BigTileFillMode.SINGLE, BigTileFillMode.CUSTOM)
+        uses_number_palette = mode == BigTileFillMode.BY_NUMBER
+        uses_custom_palette = mode == BigTileFillMode.CUSTOM
+
+        self.fill_color_label.setVisible(uses_general_color)
+        self.fill_color.setVisible(uses_general_color)
+        self.fill_opacity_label.setVisible(fill_enabled)
+        self.fill_opacity.setVisible(fill_enabled)
+        self.palette_preview.setVisible(uses_number_palette)
+        self.custom_palette_note.setVisible(uses_custom_palette and bool(self._big_numbers))
+        self.custom_palette_table.setVisible(uses_custom_palette and bool(self._big_numbers))
+        self.no_big_tiles_note.setVisible(uses_custom_palette and not self._big_numbers)
+
+    def _on_fill_color_changed(self, color: str) -> None:
+        for button in self._custom_color_buttons:
+            button.set_fallback_color(color)
+
+    def _sync_small_fill_controls(self, _checked: bool | None = None) -> None:
+        enabled = self.small_fill_enabled.isChecked()
+        self.small_fill_color_label.setEnabled(enabled)
+        self.small_fill_color.setEnabled(enabled)
+        self.small_fill_opacity_label.setEnabled(enabled)
+        self.small_fill_opacity.setEnabled(enabled)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -144,6 +457,7 @@ class MainWindow(QMainWindow):
         self._thread: QThread | None = None
         self._worker: ExportWorker | None = None
         self.big_tile_names: dict[int, str] = {}
+        self.kml_style = KmlStyle()
 
         self._build_ui()
         self._connect_signals()
@@ -193,6 +507,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self._build_coordinates_group())
         left_layout.addWidget(self._build_grid_group())
         left_layout.addWidget(self._build_big_tile_names_group())
+        left_layout.addWidget(self._build_kml_style_group())
         left_layout.addWidget(self._build_export_group())
         left_layout.addStretch(1)
 
@@ -325,7 +640,7 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(controls)
 
-        note = QLabel("Заливка отключена: KML содержит только стандартные непрозрачные линии.")
+        note = QLabel("Цвета и заливка настраиваются отдельно в блоке «Стиль KML».")
         note.setObjectName("Hint")
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -345,6 +660,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.big_tile_names_button)
 
         note = QLabel("Имена применяются только к квадратам 1000x1000. Файлы ZIP остаются tile_###.kml.")
+        note.setObjectName("Hint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        return group
+
+    def _build_kml_style_group(self) -> QGroupBox:
+        group = QGroupBox("Стиль KML")
+        layout = QVBoxLayout(group)
+
+        self.kml_style_summary = QLabel(_format_kml_style_summary(self.kml_style))
+        self.kml_style_summary.setObjectName("Hint")
+        self.kml_style_summary.setWordWrap(True)
+        layout.addWidget(self.kml_style_summary)
+
+        self.kml_style_button = QPushButton("Настроить стиль KML")
+        self.kml_style_button.setToolTip("Цвета линий, толщина и заливка только больших квадратов.")
+        layout.addWidget(self.kml_style_button)
+
+        note = QLabel("Заливка 100x100 применяется к каждому малому квадрату одним выбранным цветом.")
         note.setObjectName("Hint")
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -405,6 +739,7 @@ class MainWindow(QMainWindow):
         self.export_kml.toggled.connect(self._schedule_stats_update)
         self.generate_button.clicked.connect(self.generate)
         self.big_tile_names_button.clicked.connect(self.open_big_tile_names_dialog)
+        self.kml_style_button.clicked.connect(self.open_kml_style_dialog)
         self.open_folder_button.clicked.connect(self.open_output_folder)
 
     def _schedule_stats_update(self) -> None:
@@ -454,6 +789,7 @@ class MainWindow(QMainWindow):
             small_spiral_direction=SpiralDirection(self.small_spiral_direction.currentData()),
             rounding_mode=RoundingMode(self.rounding_mode.currentData()),
             export_mode=export_mode,
+            kml_style=self.kml_style,
         )
 
     @Slot()
@@ -465,6 +801,7 @@ class MainWindow(QMainWindow):
             self.stats_text.setPlainText(_format_stats(stats, options))
             self.generate_button.setEnabled(not stats.errors and self._thread is None)
             self._update_big_tile_names_summary(stats, options)
+            self._update_kml_style_summary()
             self.status_label.setText("Есть ошибки" if stats.errors else "Готово к генерации")
         except Exception as exc:
             self.stats_text.setPlainText(f"Ошибка ввода: {exc}")
@@ -534,6 +871,24 @@ class MainWindow(QMainWindow):
             self.big_tile_names = dialog.names()
             self.update_stats()
 
+    @Slot()
+    def open_kml_style_dialog(self) -> None:
+        big_numbers: list[int] = []
+        try:
+            bounds = self._current_bounds()
+            options = self._current_options()
+            stats = calculate_grid_stats(bounds, options)
+            if stats.big_grid is not None and not stats.errors:
+                big_numbers = list(range(1, stats.big_grid.total + 1))
+        except Exception:
+            big_numbers = []
+
+        dialog = KmlStyleDialog(self.kml_style, big_numbers, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.kml_style = dialog.kml_style()
+            self._update_kml_style_summary()
+            self.update_stats()
+
     def _update_big_tile_names_summary(self, stats: GridStats, options: GridOptions) -> None:
         if not options.include_1000:
             self.big_tile_names_button.setEnabled(False)
@@ -551,6 +906,9 @@ class MainWindow(QMainWindow):
             self.big_tile_names_summary.setText(f"Переименовано: {renamed_count} из {stats.big_grid.total}.")
         else:
             self.big_tile_names_summary.setText(f"Переименований нет. Доступно квадратов: {stats.big_grid.total}.")
+
+    def _update_kml_style_summary(self) -> None:
+        self.kml_style_summary.setText(_format_kml_style_summary(self.kml_style))
 
     def _start_export(self, out_path: Path, bounds: Bounds, options: GridOptions) -> None:
         self._thread = QThread(self)
@@ -573,6 +931,7 @@ class MainWindow(QMainWindow):
     def _set_export_running(self, running: bool) -> None:
         self.generate_button.setEnabled(not running)
         self.big_tile_names_button.setEnabled(not running and self.include_1000.isChecked())
+        self.kml_style_button.setEnabled(not running)
         self.progress.setVisible(running)
         self.progress.setRange(0, 0)
         self.status_label.setText("Генерация..." if running else "Готово")
@@ -678,6 +1037,73 @@ class MainWindow(QMainWindow):
         )
 
 
+def _select_combo_data(combo: QComboBox, value: str) -> None:
+    for index in range(combo.count()):
+        if combo.itemData(index) == value:
+            combo.setCurrentIndex(index)
+            return
+
+
+def _color_button_stylesheet(color: str) -> str:
+    text_color = _contrast_text_color(color)
+    return (
+        "QPushButton {"
+        f"background: {color};"
+        f"color: {text_color};"
+        "border: 1px solid #6d7480;"
+        "font-weight: 700;"
+        "}"
+    )
+
+
+def _contrast_text_color(color: str) -> str:
+    rgb = color.removeprefix("#")
+    red = int(rgb[0:2], 16)
+    green = int(rgb[2:4], 16)
+    blue = int(rgb[4:6], 16)
+    luminance = (red * 299 + green * 587 + blue * 114) / 1000
+    return "#111111" if luminance > 150 else "#ffffff"
+
+
+def _palette_preview_html(colors: tuple[str, ...]) -> str:
+    blocks = "".join(
+        f'<span style="background:{color}; border:1px solid #777;">&nbsp;&nbsp;&nbsp;&nbsp;</span> '
+        for color in colors
+    )
+    return f"Палитра по номерам: {blocks}"
+
+
+def _format_kml_style_summary(style: KmlStyle) -> str:
+    style = style.normalized()
+    return (
+        f"Линии: 1000x1000 {style.big_line_color.upper()} / {style.big_line_width}, "
+        f"100x100 {style.small_line_color.upper()} / {style.small_line_width}. "
+        f"Заливка 1000x1000: {_format_big_fill_summary(style)}. "
+        f"Заливка 100x100: {_format_small_fill_summary(style)}."
+    )
+
+
+def _format_big_fill_summary(style: KmlStyle) -> str:
+    if style.big_fill_mode == BigTileFillMode.NONE:
+        return "выключена"
+    if style.big_fill_opacity <= 0:
+        return "0%, без видимой заливки"
+    if style.big_fill_mode == BigTileFillMode.SINGLE:
+        return f"один цвет {style.big_fill_color.upper()}, {style.big_fill_opacity}%"
+    if style.big_fill_mode == BigTileFillMode.BY_NUMBER:
+        return f"палитра по номерам, {style.big_fill_opacity}%"
+    custom_count = len(style.custom_big_fill_colors)
+    return f"пользовательская палитра ({custom_count}), {style.big_fill_opacity}%"
+
+
+def _format_small_fill_summary(style: KmlStyle) -> str:
+    if not style.small_fill_enabled:
+        return "выключена"
+    if style.small_fill_opacity <= 0:
+        return "0%, без видимой заливки"
+    return f"каждый 100x100 {style.small_fill_color.upper()}, {style.small_fill_opacity}%"
+
+
 def _format_stats(stats: GridStats, options: GridOptions) -> str:
     lines: list[str] = []
     raw = stats.raw_bounds
@@ -710,8 +1136,9 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
         )
 
     lines.append("")
-    lines.append("KML-стиль: стандартная непрозрачная линия, заливка отключена.")
+    lines.append(f"KML-стиль: {_format_kml_style_summary(options.kml_style)}")
     if options.include_100:
+        lines.append(f"Заливка 100x100: {_format_small_fill_summary(options.kml_style)}.")
         lines.append(f"Нумерация 100x100: {_format_small_numbering_options(options)}.")
 
     if stats.warnings:

@@ -8,9 +8,11 @@ import pytest
 
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
 from limuzin_grid_manager.core.models import (
+    BigTileFillMode,
     Bounds,
     ExportMode,
     GridOptions,
+    KmlStyle,
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
@@ -45,6 +47,130 @@ def test_write_kml_all_is_xml_without_colored_fill(tmp_path: Path) -> None:
     assert "PolyStyle>\n<color>" not in text
 
 
+def test_custom_line_style_is_written_to_big_and_small_tiles(tmp_path: Path) -> None:
+    out_path = tmp_path / "styled-lines.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+        kml_style=KmlStyle(
+            big_line_color="#ff0000",
+            small_line_color="#00ff00",
+            big_line_width=5,
+            small_line_width=3,
+        ),
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+    text = out_path.read_text(encoding="utf-8")
+
+    assert "<color>ff0000ff</color>" in text
+    assert "<width>5</width>" in text
+    assert text.count("<color>ff00ff00</color>") == 100
+    assert text.count("<width>3</width>") == 100
+    assert text.count("<fill>0</fill>") == 101
+
+
+def test_big_fill_uses_alpha_and_small_tiles_stay_without_fill(tmp_path: Path) -> None:
+    out_path = tmp_path / "big-fill.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+        kml_style=KmlStyle(
+            big_fill_mode=BigTileFillMode.SINGLE,
+            big_fill_color="#3366cc",
+            big_fill_opacity=50,
+        ),
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+    text = out_path.read_text(encoding="utf-8")
+
+    assert "<color>80cc6633</color>" in text
+    assert text.count("<fill>1</fill>") == 1
+    assert text.count("<fill>0</fill>") == 100
+
+
+def test_small_fill_is_written_to_each_small_tile(tmp_path: Path) -> None:
+    out_path = tmp_path / "small-fill.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+        kml_style=KmlStyle(
+            small_fill_enabled=True,
+            small_fill_color="#112233",
+            small_fill_opacity=40,
+        ),
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+    text = out_path.read_text(encoding="utf-8")
+    root = ElementTree.fromstring(text)
+
+    placemarks = root.findall(".//{http://www.opengis.net/kml/2.2}Placemark")
+    assert len(placemarks) == 101
+    assert "Заливка 100x100" not in text
+    assert text.count("<color>66332211</color>") == 100
+    assert text.count("<fill>1</fill>") == 100
+    assert text.count("<fill>0</fill>") == 1
+    assert "<outline>0</outline>" not in text
+
+
+def test_custom_palette_applies_only_to_big_tiles(tmp_path: Path) -> None:
+    out_path = tmp_path / "palette.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+        kml_style=KmlStyle(
+            big_fill_mode=BigTileFillMode.CUSTOM,
+            big_fill_color="#abcdef",
+            big_fill_opacity=100,
+            custom_big_fill_colors=((2, "#123456"),),
+        ),
+    )
+
+    write_kml_all(out_path, _bounds_2x2_big(), options)
+    text = out_path.read_text(encoding="utf-8")
+
+    assert "<color>ffefcdab</color>" in text
+    assert "<color>ff563412</color>" in text
+    assert text.count("<fill>1</fill>") == 4
+
+
+def test_number_palette_cycles_by_big_tile_number(tmp_path: Path) -> None:
+    out_path = tmp_path / "number-palette.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+        kml_style=KmlStyle(
+            big_fill_mode=BigTileFillMode.BY_NUMBER,
+            big_fill_opacity=100,
+            big_fill_palette=("#ff0000", "#00ff00"),
+        ),
+    )
+
+    write_kml_all(out_path, _bounds_2x2_big(), options)
+    text = out_path.read_text(encoding="utf-8")
+
+    assert text.count("<color>ff0000ff</color>") == 2
+    assert text.count("<color>ff00ff00</color>") == 2
+    assert text.count("<fill>1</fill>") == 4
+
+
 def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
     out_path = tmp_path / "tiles.zip"
     options = GridOptions(
@@ -67,6 +193,40 @@ def test_zip_contains_one_kml_per_big_tile(tmp_path: Path) -> None:
     assert document_name is not None
     assert document_name.text == "Квадрат 001"
     assert len(placemarks) == 101
+
+
+def test_zip_tile_keeps_custom_kml_style(tmp_path: Path) -> None:
+    out_path = tmp_path / "styled.zip"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.ZIP,
+        kml_style=KmlStyle(
+            big_line_color="#ff0000",
+            small_line_color="#00ff00",
+            big_fill_mode=BigTileFillMode.SINGLE,
+            big_fill_color="#3366cc",
+            big_fill_opacity=50,
+            small_fill_enabled=True,
+            small_fill_color="#112233",
+            small_fill_opacity=40,
+        ),
+    )
+
+    write_zip_per_big_tile(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    with zipfile.ZipFile(out_path) as zf:
+        tile = zf.read("tile_001.kml").decode("utf-8")
+
+    assert "<color>ff0000ff</color>" in tile
+    assert "<color>80cc6633</color>" in tile
+    assert tile.count("<color>66332211</color>") == 100
+    assert tile.count("<color>ff00ff00</color>") == 100
+    assert tile.count("<fill>1</fill>") == 101
+    assert "<fill>0</fill>" not in tile
+    assert "<outline>0</outline>" not in tile
 
 
 def test_export_uses_custom_small_numbering(tmp_path: Path) -> None:

@@ -7,11 +7,16 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from limuzin_grid_manager.core.crs import ck42_to_wgs84, make_transformer_for_zone
 from limuzin_grid_manager.core.geometry import rect_corners_ck42, snake_index
-from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions
+from limuzin_grid_manager.core.models import (
+    BigTileFillMode,
+    Bounds,
+    ExportMode,
+    GridOptions,
+    KmlStyle,
+    normalize_rgb_color,
+)
 from limuzin_grid_manager.core.numbering import small_number
 from limuzin_grid_manager.core.stats import ensure_exportable
-
-LINE_COLOR = "ff000000"
 
 
 def write_kml_all(
@@ -24,6 +29,7 @@ def write_kml_all(
     stats = ensure_exportable(bounds, options)
     transformer = make_transformer_for_zone(stats.zone or 0)
     big_tile_names = dict(options.big_tile_names)
+    kml_style = options.kml_style
 
     total_work = max(stats.big_grid.total if stats.big_grid else 1, 1)
     done = 0
@@ -44,19 +50,28 @@ def write_kml_all(
                 fh.write("<Folder>\n")
                 fh.write(f"<name>{escape_xml(big_folder_name)}</name>\n")
                 fh.write("<open>0</open>\n")
-                _write_rectangle_placemark(fh, big_placemark_name, x_top, y_left, step_big, 2, transformer)
+                _write_big_rectangle_placemark(
+                    fh,
+                    big_placemark_name,
+                    big_num,
+                    x_top,
+                    y_left,
+                    step_big,
+                    transformer,
+                    kml_style,
+                )
 
                 if options.include_100:
                     fh.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
                     for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
-                        _write_rectangle_placemark(
+                        _write_small_rectangle_placemark(
                             fh,
                             str(_small_number_for_cell(small_row, small_col, 10, 10, options)),
                             small_x_top,
                             small_y_left,
                             100,
-                            1,
                             transformer,
+                            kml_style,
                         )
                     fh.write("</Folder>\n")
 
@@ -69,7 +84,15 @@ def write_kml_all(
             fh.write("<Folder><name>Сетка 100x100</name><open>1</open>\n")
             for row, col, x_top, y_left in _iter_grid_cells(stats.small_bounds, 100):
                 small_name = _small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
-                _write_rectangle_placemark(fh, str(small_name), x_top, y_left, 100, 1, transformer)
+                _write_small_rectangle_placemark(
+                    fh,
+                    str(small_name),
+                    x_top,
+                    y_left,
+                    100,
+                    transformer,
+                    kml_style,
+                )
             fh.write("</Folder>\n")
 
         _write_document_end(fh)
@@ -95,6 +118,7 @@ def write_zip_per_big_tile(
         small_spiral_direction=options.small_spiral_direction,
         rounding_mode=options.rounding_mode,
         export_mode=ExportMode.ZIP,
+        kml_style=options.kml_style,
     )
     stats = ensure_exportable(bounds, options)
     assert stats.big_bounds is not None
@@ -131,18 +155,30 @@ def fmt_coords_lonlat(coords_lonlat: list[tuple[float, float]]) -> str:
     return " ".join(f"{lon:.7f},{lat:.7f},0" for lon, lat in coords_lonlat)
 
 
-def polygon_placemark(name: str, coords_lonlat_closed: list[tuple[float, float]], line_width: int) -> str:
+def polygon_placemark(
+    name: str,
+    coords_lonlat_closed: list[tuple[float, float]],
+    line_color: str,
+    line_width: int,
+    fill_color: str | None = None,
+    fill_opacity: int = 0,
+    outline: bool = True,
+) -> str:
+    line_style = (
+        f"""<LineStyle>
+<color>{rgb_to_kml_color(line_color, 100)}</color>
+<width>{int(line_width)}</width>
+</LineStyle>
+"""
+        if outline
+        else ""
+    )
+    poly_style = _poly_style(fill_color, fill_opacity, outline)
     return f"""<Placemark>
 <name>{escape_xml(name)}</name>
 <Style>
-<LineStyle>
-<color>{LINE_COLOR}</color>
-<width>{int(line_width)}</width>
-</LineStyle>
-<PolyStyle>
-<fill>0</fill>
-<outline>1</outline>
-</PolyStyle>
+{line_style}
+{poly_style}
 </Style>
 <Polygon>
 <tessellate>1</tessellate>
@@ -175,13 +211,67 @@ def _write_rectangle_placemark(
     name: str,
     x_top: int,
     y_left: int,
-    step: int,
+    step_x: int,
+    step_y: int,
+    line_color: str,
     line_width: int,
     transformer: object,
+    fill_color: str | None = None,
+    fill_opacity: int = 0,
+    outline: bool = True,
 ) -> None:
-    corners = rect_corners_ck42(x_top, y_left, step, step)
+    corners = rect_corners_ck42(x_top, y_left, step_x, step_y)
     coords_lonlat = [ck42_to_wgs84(x, y, transformer) for x, y in corners]
-    fh.write(polygon_placemark(name, coords_lonlat, line_width))
+    fh.write(polygon_placemark(name, coords_lonlat, line_color, line_width, fill_color, fill_opacity, outline))
+
+
+def _write_big_rectangle_placemark(
+    fh: TextIO,
+    name: str,
+    big_num: int,
+    x_top: int,
+    y_left: int,
+    step: int,
+    transformer: object,
+    style: KmlStyle,
+) -> None:
+    _write_rectangle_placemark(
+        fh,
+        name,
+        x_top,
+        y_left,
+        step,
+        step,
+        style.big_line_color,
+        style.big_line_width,
+        transformer,
+        fill_color=_big_tile_fill_color(big_num, style),
+        fill_opacity=style.big_fill_opacity,
+    )
+
+
+def _write_small_rectangle_placemark(
+    fh: TextIO,
+    name: str,
+    x_top: int,
+    y_left: int,
+    step: int,
+    transformer: object,
+    style: KmlStyle,
+) -> None:
+    _write_rectangle_placemark(
+        fh,
+        name,
+        x_top,
+        y_left,
+        step,
+        step,
+        style.small_line_color,
+        style.small_line_width,
+        transformer,
+        fill_color=style.small_fill_color if style.small_fill_enabled else None,
+        fill_opacity=style.small_fill_opacity,
+    )
 
 
 def _tile_kml(
@@ -201,13 +291,22 @@ def _tile_kml(
     writer = ListWriter()
     document_name = _big_tile_document_name(big_num, big_tile_names)
     placemark_name = _big_tile_placemark_name(big_num, big_tile_names)
+    kml_style = options.kml_style
     _write_document_start(writer, document_name)
-    _write_rectangle_placemark(writer, placemark_name, x_top, y_left, 1000, 2, transformer)
+    _write_big_rectangle_placemark(writer, placemark_name, big_num, x_top, y_left, 1000, transformer, kml_style)
     if options.include_100:
         writer.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
         for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
             small_name = _small_number_for_cell(small_row, small_col, 10, 10, options)
-            _write_rectangle_placemark(writer, str(small_name), small_x_top, small_y_left, 100, 1, transformer)
+            _write_small_rectangle_placemark(
+                writer,
+                str(small_name),
+                small_x_top,
+                small_y_left,
+                100,
+                transformer,
+                kml_style,
+            )
         writer.write("</Folder>\n")
     _write_document_end(writer)
     return "".join(lines)
@@ -259,3 +358,37 @@ def _small_number_for_cell(row: int, col: int, rows: int, cols: int, options: Gr
         options.small_numbering_start_corner,
         options.small_spiral_direction,
     )
+
+
+def _big_tile_fill_color(big_num: int, style: KmlStyle) -> str | None:
+    if style.big_fill_mode == BigTileFillMode.NONE or style.big_fill_opacity <= 0:
+        return None
+    if style.big_fill_mode == BigTileFillMode.SINGLE:
+        return style.big_fill_color
+    if style.big_fill_mode == BigTileFillMode.BY_NUMBER:
+        return style.big_fill_palette[(big_num - 1) % len(style.big_fill_palette)]
+    custom_colors = dict(style.custom_big_fill_colors)
+    return custom_colors.get(big_num) or style.big_fill_color
+
+
+def _poly_style(fill_color: str | None, fill_opacity: int, outline: bool = True) -> str:
+    outline_value = "1" if outline else "0"
+    if fill_color is None or fill_opacity <= 0:
+        return """<PolyStyle>
+<fill>0</fill>
+<outline>{outline}</outline>
+</PolyStyle>""".format(outline=outline_value)
+    return f"""<PolyStyle>
+<color>{rgb_to_kml_color(fill_color, fill_opacity)}</color>
+<fill>1</fill>
+<outline>{outline_value}</outline>
+</PolyStyle>"""
+
+
+def rgb_to_kml_color(color: str, opacity_percent: int) -> str:
+    rgb = normalize_rgb_color(color).removeprefix("#")
+    alpha = max(0, min(255, int(max(0, min(100, int(opacity_percent))) * 255 / 100 + 0.5)))
+    red = rgb[0:2]
+    green = rgb[2:4]
+    blue = rgb[4:6]
+    return f"{alpha:02x}{blue}{green}{red}"

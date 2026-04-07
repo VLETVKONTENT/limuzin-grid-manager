@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+
+DEFAULT_BIG_FILL_PALETTE = (
+    "#e53935",
+    "#43a047",
+    "#1e88e5",
+    "#fdd835",
+    "#8e24aa",
+    "#fb8c00",
+    "#00acc1",
+    "#6d4c41",
+)
 
 
 class RoundingMode(StrEnum):
@@ -40,6 +52,13 @@ class StartCorner(StrEnum):
     SE = "SE"
 
 
+class BigTileFillMode(StrEnum):
+    NONE = "none"
+    SINGLE = "single"
+    BY_NUMBER = "by_number"
+    CUSTOM = "custom"
+
+
 @dataclass(frozen=True)
 class Bounds:
     x_top: int
@@ -55,6 +74,39 @@ class Bounds:
 
 
 @dataclass(frozen=True)
+class KmlStyle:
+    big_line_color: str = "#000000"
+    small_line_color: str = "#000000"
+    big_line_width: int = 2
+    small_line_width: int = 1
+    big_fill_mode: BigTileFillMode = BigTileFillMode.NONE
+    big_fill_color: str = "#fdd835"
+    big_fill_opacity: int = 35
+    big_fill_palette: tuple[str, ...] = DEFAULT_BIG_FILL_PALETTE
+    custom_big_fill_colors: tuple[tuple[int, str], ...] = ()
+    small_fill_enabled: bool = False
+    small_fill_color: str = "#90caf9"
+    small_fill_opacity: int = 25
+
+    def normalized(self) -> "KmlStyle":
+        palette = tuple(normalize_rgb_color(color) for color in self.big_fill_palette) or DEFAULT_BIG_FILL_PALETTE
+        return KmlStyle(
+            big_line_color=normalize_rgb_color(self.big_line_color),
+            small_line_color=normalize_rgb_color(self.small_line_color),
+            big_line_width=normalize_line_width(self.big_line_width),
+            small_line_width=normalize_line_width(self.small_line_width),
+            big_fill_mode=BigTileFillMode(self.big_fill_mode),
+            big_fill_color=normalize_rgb_color(self.big_fill_color),
+            big_fill_opacity=normalize_opacity_percent(self.big_fill_opacity),
+            big_fill_palette=palette,
+            custom_big_fill_colors=normalize_big_fill_colors(self.custom_big_fill_colors),
+            small_fill_enabled=bool(self.small_fill_enabled),
+            small_fill_color=normalize_rgb_color(self.small_fill_color),
+            small_fill_opacity=normalize_opacity_percent(self.small_fill_opacity),
+        )
+
+
+@dataclass(frozen=True)
 class GridOptions:
     include_1000: bool = True
     include_100: bool = True
@@ -66,6 +118,7 @@ class GridOptions:
     small_spiral_direction: SpiralDirection = SpiralDirection.CLOCKWISE
     rounding_mode: RoundingMode = RoundingMode.IN
     export_mode: ExportMode = ExportMode.KML
+    kml_style: KmlStyle = field(default_factory=KmlStyle)
 
     def normalized(self) -> "GridOptions":
         return GridOptions(
@@ -79,6 +132,7 @@ class GridOptions:
             small_spiral_direction=SpiralDirection(self.small_spiral_direction),
             rounding_mode=RoundingMode(self.rounding_mode),
             export_mode=ExportMode(self.export_mode),
+            kml_style=self.kml_style.normalized(),
         )
 
 
@@ -125,3 +179,32 @@ def normalize_big_tile_names(
         if number > 0 and name:
             names[number] = name
     return tuple(sorted(names.items()))
+
+
+def normalize_big_fill_colors(
+    value: Mapping[int | str, str] | Iterable[tuple[int | str, str]],
+) -> tuple[tuple[int, str], ...]:
+    items = value.items() if isinstance(value, Mapping) else value
+    colors: dict[int, str] = {}
+    for number_value, color_value in items:
+        number = int(number_value)
+        if number > 0:
+            colors[number] = normalize_rgb_color(color_value)
+    return tuple(sorted(colors.items()))
+
+
+def normalize_rgb_color(value: str) -> str:
+    text = str(value).strip()
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) != 6 or any(char not in "0123456789abcdefABCDEF" for char in text):
+        raise ValueError(f"Цвет должен быть в формате #RRGGBB: {value!r}.")
+    return f"#{text.lower()}"
+
+
+def normalize_line_width(value: int) -> int:
+    return max(1, min(12, int(value)))
+
+
+def normalize_opacity_percent(value: int) -> int:
+    return max(0, min(100, int(value)))
