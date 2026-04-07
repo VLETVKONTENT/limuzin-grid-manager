@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -43,6 +43,18 @@ from limuzin_grid_manager.app.export_formats import (
     format_export_summary,
     normalize_export_filename,
     output_path_for,
+)
+from limuzin_grid_manager.app.project import (
+    PROJECT_DIALOG_FILTER,
+    CoordinateState,
+    ProjectFileError,
+    ProjectState,
+    apply_project_preset,
+    available_project_presets,
+    default_project_state,
+    load_project_state,
+    normalize_project_path,
+    save_project_state,
 )
 from limuzin_grid_manager.app.resources import resource_path
 from limuzin_grid_manager.core.geometry import normalize_bounds
@@ -466,14 +478,42 @@ class MainWindow(QMainWindow):
         self._worker: ExportWorker | None = None
         self._latest_stats: GridStats | None = None
         self._latest_options: GridOptions | None = None
+        self._current_project_path: Path | None = None
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
         self._last_export_mode = ExportMode.KML
 
+        self._build_menus()
         self._build_ui()
         self._connect_signals()
         self._apply_style()
         self._schedule_stats_update()
+
+    def _build_menus(self) -> None:
+        project_menu = self.menuBar().addMenu("Проект")
+        self.new_project_action = QAction("Новый проект", self)
+        self.new_project_action.setShortcut("Ctrl+N")
+        self.open_project_action = QAction("Открыть...", self)
+        self.open_project_action.setShortcut("Ctrl+O")
+        self.save_project_action = QAction("Сохранить", self)
+        self.save_project_action.setShortcut("Ctrl+S")
+        self.save_project_as_action = QAction("Сохранить как...", self)
+        self.save_project_as_action.setShortcut("Ctrl+Shift+S")
+
+        project_menu.addAction(self.new_project_action)
+        project_menu.addAction(self.open_project_action)
+        project_menu.addSeparator()
+        project_menu.addAction(self.save_project_action)
+        project_menu.addAction(self.save_project_as_action)
+
+        preset_menu = self.menuBar().addMenu("Пресеты")
+        self.preset_actions: dict[str, QAction] = {}
+        for preset in available_project_presets():
+            action = QAction(preset.title, self)
+            action.setToolTip(preset.description)
+            action.setData(preset.id)
+            preset_menu.addAction(action)
+            self.preset_actions[preset.id] = action
 
     def _build_ui(self) -> None:
         root = QWidget(self)
@@ -488,6 +528,7 @@ class MainWindow(QMainWindow):
         subtitle.setObjectName("Subtitle")
         root_layout.addWidget(title)
         root_layout.addWidget(subtitle)
+        root_layout.addLayout(self._build_project_bar())
 
         splitter = QSplitter()
         splitter.setChildrenCollapsible(False)
@@ -556,6 +597,36 @@ class MainWindow(QMainWindow):
         footer.addWidget(self.generate_button)
         footer.addWidget(self.open_folder_button)
 
+    def _build_project_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setSpacing(8)
+
+        self.new_project_button = QPushButton("Новый")
+        self.open_project_button = QPushButton("Открыть")
+        self.save_project_button = QPushButton("Сохранить")
+        self.save_project_as_button = QPushButton("Сохранить как")
+
+        layout.addWidget(self.new_project_button)
+        layout.addWidget(self.open_project_button)
+        layout.addWidget(self.save_project_button)
+        layout.addWidget(self.save_project_as_button)
+
+        self.project_status = QLabel("Новый проект")
+        self.project_status.setObjectName("Hint")
+        self.project_status.setWordWrap(True)
+        layout.addWidget(self.project_status, 1)
+
+        self.preset_combo = QComboBox()
+        self.preset_combo.setMinimumWidth(300)
+        for preset in available_project_presets():
+            self.preset_combo.addItem(preset.title, preset.id)
+        self.preset_combo.setToolTip("Пресеты меняют настройки сетки или KML-стиля, но не трогают координаты.")
+
+        self.apply_preset_button = QPushButton("Применить пресет")
+        layout.addWidget(self.preset_combo)
+        layout.addWidget(self.apply_preset_button)
+        return layout
+
     def _build_preview_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -611,7 +682,21 @@ class MainWindow(QMainWindow):
 
     def _build_export_tab(self) -> QWidget:
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.export_scroll_area = QScrollArea()
+        self.export_scroll_area.setWidgetResizable(True)
+        self.export_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.export_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.export_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        tab_layout.addWidget(self.export_scroll_area, 1)
+
+        export_content = QWidget()
+        export_content.setMinimumWidth(560)
+        self.export_scroll_area.setWidget(export_content)
+
+        layout = QVBoxLayout(export_content)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
 
@@ -656,6 +741,7 @@ class MainWindow(QMainWindow):
         self.export_summary = QTextEdit()
         self.export_summary.setReadOnly(True)
         self.export_summary.setMinimumHeight(180)
+        self.export_summary.setMinimumWidth(420)
         self.export_summary.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         summary_layout.addWidget(self.export_summary, 1)
         layout.addWidget(summary_group, 1)
@@ -874,10 +960,197 @@ class MainWindow(QMainWindow):
         self.preview_canvas.selectionChanged.connect(self._on_preview_selection_changed)
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.export_open_folder_button.clicked.connect(self.open_output_folder)
+        self.new_project_action.triggered.connect(self.new_project)
+        self.open_project_action.triggered.connect(self.open_project)
+        self.save_project_action.triggered.connect(self.save_project)
+        self.save_project_as_action.triggered.connect(self.save_project_as)
+        self.new_project_button.clicked.connect(self.new_project)
+        self.open_project_button.clicked.connect(self.open_project)
+        self.save_project_button.clicked.connect(self.save_project)
+        self.save_project_as_button.clicked.connect(self.save_project_as)
+        self.apply_preset_button.clicked.connect(self.apply_selected_preset)
+        for preset_id, action in self.preset_actions.items():
+            action.triggered.connect(lambda _checked=False, preset_id=preset_id: self.apply_preset(preset_id))
 
     def _schedule_stats_update(self) -> None:
         if hasattr(self, "_stats_timer"):
             self._stats_timer.start()
+
+    @Slot()
+    def new_project(self) -> None:
+        self._current_project_path = None
+        self._clear_last_output_path()
+        self._apply_project_state(default_project_state())
+        self._update_project_status()
+        self.status_label.setText("Создан новый проект")
+
+    @Slot()
+    def open_project(self) -> None:
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Открыть проект",
+            str(self._current_project_path or default_export_directory()),
+            PROJECT_DIALOG_FILTER,
+        )
+        if not selected:
+            return
+
+        project_path = Path(selected)
+        try:
+            state = load_project_state(project_path)
+        except ProjectFileError as exc:
+            QMessageBox.critical(self, "Открыть проект", str(exc))
+            return
+
+        self._current_project_path = project_path
+        self._clear_last_output_path()
+        self._apply_project_state(state)
+        self._update_project_status()
+        self.status_label.setText(f"Открыт проект: {project_path.name}")
+
+    @Slot()
+    def save_project(self) -> None:
+        if self._current_project_path is None:
+            self.save_project_as()
+            return
+        self._save_project_to_path(self._current_project_path)
+
+    @Slot()
+    def save_project_as(self) -> None:
+        initial_path = self._current_project_path or (default_export_directory() / "project.lgm.json")
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить проект",
+            str(initial_path),
+            PROJECT_DIALOG_FILTER,
+        )
+        if not selected:
+            return
+        self._save_project_to_path(normalize_project_path(selected))
+
+    def _save_project_to_path(self, path: Path) -> None:
+        try:
+            saved_path = save_project_state(path, self._current_project_state())
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Сохранить проект", f"Не удалось сохранить проект:\n{exc}")
+            return
+
+        self._current_project_path = saved_path
+        self._update_project_status()
+        self.status_label.setText(f"Проект сохранен: {saved_path.name}")
+
+    @Slot()
+    def apply_selected_preset(self) -> None:
+        preset_id = self.preset_combo.currentData()
+        if preset_id:
+            self.apply_preset(str(preset_id))
+
+    def apply_preset(self, preset_id: str) -> None:
+        try:
+            options = apply_project_preset(preset_id, self._current_options())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Пресеты", str(exc))
+            return
+
+        self._apply_options(options)
+        _select_combo_data(self.preset_combo, preset_id)
+        self.status_label.setText("Пресет применен")
+
+    def _current_project_state(self) -> ProjectState:
+        return ProjectState(
+            coordinates=CoordinateState(
+                x_nw=self.x_nw.text(),
+                y_nw=self.y_nw.text(),
+                x_se=self.x_se.text(),
+                y_se=self.y_se.text(),
+            ),
+            options=self._current_options(),
+            export_folder=self.export_folder.text(),
+            export_filename=self.export_filename.text(),
+        )
+
+    def _apply_project_state(self, state: ProjectState) -> None:
+        self._with_blocked_signals(
+            (
+                self.x_nw,
+                self.y_nw,
+                self.x_se,
+                self.y_se,
+                self.export_folder,
+                self.export_filename,
+            ),
+            lambda: self._set_project_fields(state),
+        )
+        self._apply_options(state.options)
+
+    def _set_project_fields(self, state: ProjectState) -> None:
+        self.x_nw.setText(state.coordinates.x_nw)
+        self.y_nw.setText(state.coordinates.y_nw)
+        self.x_se.setText(state.coordinates.x_se)
+        self.y_se.setText(state.coordinates.y_se)
+        self.export_folder.setText(state.export_folder)
+        self.export_filename.setText(state.export_filename)
+
+    def _apply_options(self, options: GridOptions) -> None:
+        options = options.normalized()
+
+        def apply() -> None:
+            self.include_1000.setChecked(options.include_1000)
+            self.include_100.setChecked(options.include_100)
+            self.snake_big.setChecked(options.snake_big)
+            _select_combo_data(self.rounding_mode, options.rounding_mode.value)
+            _select_combo_data(self.small_numbering_mode, options.small_numbering_mode.value)
+            _select_combo_data(self.small_numbering_direction, options.small_numbering_direction.value)
+            _select_combo_data(self.small_spiral_direction, options.small_spiral_direction.value)
+            _select_combo_data(self.small_numbering_start, options.small_numbering_start_corner.value)
+            _select_combo_data(self.export_format, options.export_mode.value)
+
+        self._with_blocked_signals(
+            (
+                self.include_1000,
+                self.include_100,
+                self.snake_big,
+                self.rounding_mode,
+                self.small_numbering_mode,
+                self.small_numbering_direction,
+                self.small_spiral_direction,
+                self.small_numbering_start,
+                self.export_format,
+            ),
+            apply,
+        )
+
+        self.big_tile_names = dict(options.big_tile_names)
+        self.kml_style = options.kml_style.normalized()
+        self._last_export_mode = options.export_mode
+        self._sync_numbering_controls()
+        self._update_export_format_description()
+        self._update_kml_style_summary()
+        self._schedule_stats_update()
+
+    def _with_blocked_signals(self, widgets: tuple[QObject, ...], callback) -> None:
+        previous = [(widget, widget.blockSignals(True)) for widget in widgets]
+        try:
+            callback()
+        finally:
+            for widget, was_blocked in previous:
+                widget.blockSignals(was_blocked)
+
+    def _update_project_status(self) -> None:
+        if self._current_project_path is None:
+            self.project_status.setText("Новый проект")
+            self.project_status.setToolTip("")
+            self.setWindowTitle("LIMUZIN GRID MANAGER")
+            return
+
+        self.project_status.setText(f"Проект: {self._current_project_path.name}")
+        self.project_status.setToolTip(str(self._current_project_path))
+        self.setWindowTitle(f"LIMUZIN GRID MANAGER - {self._current_project_path.name}")
+
+    def _clear_last_output_path(self) -> None:
+        self._last_output_path = None
+        self.open_folder_button.setEnabled(False)
+        self.export_open_folder_button.setEnabled(False)
 
     def _on_numbering_mode_changed(self, _index: int | None = None) -> None:
         self._sync_numbering_controls()
@@ -1218,8 +1491,22 @@ class MainWindow(QMainWindow):
             self.export_filename,
             self.export_folder_button,
             self.export_file_button,
+            self.new_project_button,
+            self.open_project_button,
+            self.save_project_button,
+            self.save_project_as_button,
+            self.preset_combo,
+            self.apply_preset_button,
         ):
             widget.setEnabled(not running)
+        for action in (
+            self.new_project_action,
+            self.open_project_action,
+            self.save_project_action,
+            self.save_project_as_action,
+            *self.preset_actions.values(),
+        ):
+            action.setEnabled(not running)
         self.export_open_folder_button.setEnabled(not running and self._last_output_path is not None)
         self.progress.setVisible(running)
         self.progress.setRange(0, 0)
