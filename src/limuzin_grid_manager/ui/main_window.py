@@ -6,7 +6,6 @@ from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
-    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -24,7 +23,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -38,6 +36,14 @@ from PySide6.QtWidgets import (
 )
 
 from limuzin_grid_manager.app.exporter import export_grid, parse_meter
+from limuzin_grid_manager.app.export_formats import (
+    available_export_formats,
+    default_export_directory,
+    export_format_for_mode,
+    format_export_summary,
+    normalize_export_filename,
+    output_path_for,
+)
 from limuzin_grid_manager.app.resources import resource_path
 from limuzin_grid_manager.core.geometry import normalize_bounds
 from limuzin_grid_manager.core.models import (
@@ -462,6 +468,7 @@ class MainWindow(QMainWindow):
         self._latest_options: GridOptions | None = None
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
+        self._last_export_mode = ExportMode.KML
 
         self._build_ui()
         self._connect_signals()
@@ -512,7 +519,6 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self._build_grid_group())
         left_layout.addWidget(self._build_big_tile_names_group())
         left_layout.addWidget(self._build_kml_style_group())
-        left_layout.addWidget(self._build_export_group())
         left_layout.addStretch(1)
 
         workspace_title = QLabel("Рабочая область")
@@ -522,6 +528,7 @@ class MainWindow(QMainWindow):
         self.workspace_tabs = QTabWidget()
         self.workspace_tabs.addTab(self._build_preview_tab(), "Предпросмотр")
         self.workspace_tabs.addTab(self._build_stats_tab(), "Проверка")
+        self.workspace_tabs.addTab(self._build_export_tab(), "Экспорт")
         right_layout.addWidget(self.workspace_tabs, 1)
 
         self.status_label = QLabel("Готово")
@@ -600,6 +607,80 @@ class MainWindow(QMainWindow):
         self.stats_text.setMinimumHeight(330)
         self.stats_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.stats_text, 1)
+        return tab
+
+    def _build_export_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+
+        format_group = QGroupBox("Формат")
+        format_layout = QVBoxLayout(format_group)
+        self.export_format = self._wide_combo()
+        for export_format in available_export_formats():
+            self.export_format.addItem(export_format.title, export_format.mode.value)
+        format_layout.addWidget(self._field_label("Вариант экспорта"))
+        format_layout.addWidget(self.export_format)
+
+        self.export_format_description = QLabel()
+        self.export_format_description.setObjectName("Hint")
+        self.export_format_description.setWordWrap(True)
+        format_layout.addWidget(self.export_format_description)
+        layout.addWidget(format_group)
+
+        path_group = QGroupBox("Куда сохранить")
+        path_layout = QGridLayout(path_group)
+        path_layout.setHorizontalSpacing(10)
+        path_layout.setVerticalSpacing(8)
+
+        self.export_folder = QLineEdit(str(default_export_directory()))
+        self.export_folder.setClearButtonEnabled(True)
+        self.export_folder_button = QPushButton("Выбрать папку")
+
+        self.export_filename = QLineEdit(export_format_for_mode(ExportMode.KML).default_filename)
+        self.export_filename.setClearButtonEnabled(True)
+        self.export_file_button = QPushButton("Выбрать файл")
+
+        path_layout.addWidget(QLabel("Папка"), 0, 0)
+        path_layout.addWidget(self.export_folder, 0, 1)
+        path_layout.addWidget(self.export_folder_button, 0, 2)
+        path_layout.addWidget(QLabel("Имя файла"), 1, 0)
+        path_layout.addWidget(self.export_filename, 1, 1)
+        path_layout.addWidget(self.export_file_button, 1, 2)
+        path_layout.setColumnStretch(1, 1)
+        layout.addWidget(path_group)
+
+        summary_group = QGroupBox("Сводка перед экспортом")
+        summary_layout = QVBoxLayout(summary_group)
+        self.export_summary = QTextEdit()
+        self.export_summary.setReadOnly(True)
+        self.export_summary.setMinimumHeight(180)
+        self.export_summary.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        summary_layout.addWidget(self.export_summary, 1)
+        layout.addWidget(summary_group, 1)
+
+        future_group = QGroupBox("Будущие форматы")
+        future_layout = QVBoxLayout(future_group)
+        future_note = QLabel(
+            "Место для следующих вариантов: только 1000x1000, только 100x100, таблица номеров, "
+            "настройки проекта и пресеты экспорта."
+        )
+        future_note.setObjectName("Hint")
+        future_note.setWordWrap(True)
+        future_layout.addWidget(future_note)
+        layout.addWidget(future_group)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self.export_generate_button = QPushButton("Сгенерировать выбранный экспорт")
+        self.export_open_folder_button = QPushButton("Открыть папку результата")
+        self.export_open_folder_button.setEnabled(False)
+        actions.addWidget(self.export_generate_button)
+        actions.addWidget(self.export_open_folder_button)
+        layout.addLayout(actions)
+
+        self._update_export_format_description()
         return tab
 
     def _build_coordinates_group(self) -> QGroupBox:
@@ -740,21 +821,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(note)
         return group
 
-    def _build_export_group(self) -> QGroupBox:
-        group = QGroupBox("Экспорт")
-        layout = QVBoxLayout(group)
-
-        self.export_kml = QRadioButton("Один общий файл .kml")
-        self.export_zip = QRadioButton("ZIP: отдельный .kml на каждый 1000x1000")
-        self.export_kml.setChecked(True)
-        self.export_group = QButtonGroup(self)
-        self.export_group.addButton(self.export_kml)
-        self.export_group.addButton(self.export_zip)
-
-        layout.addWidget(self.export_kml)
-        layout.addWidget(self.export_zip)
-        return group
-
     def _coord_edit(self, value: str) -> QLineEdit:
         edit = QLineEdit(value)
         edit.setClearButtonEnabled(True)
@@ -792,8 +858,13 @@ class MainWindow(QMainWindow):
         self.small_numbering_direction.currentIndexChanged.connect(self._schedule_stats_update)
         self.small_spiral_direction.currentIndexChanged.connect(self._schedule_stats_update)
         self.small_numbering_start.currentIndexChanged.connect(self._schedule_stats_update)
-        self.export_kml.toggled.connect(self._schedule_stats_update)
+        self.export_format.currentIndexChanged.connect(self._on_export_format_changed)
+        self.export_folder.textChanged.connect(self._update_export_summary_from_latest)
+        self.export_filename.textChanged.connect(self._update_export_summary_from_latest)
+        self.export_folder_button.clicked.connect(self.choose_export_folder)
+        self.export_file_button.clicked.connect(self.choose_export_file)
         self.generate_button.clicked.connect(self.generate)
+        self.export_generate_button.clicked.connect(self.generate)
         self.big_tile_names_button.clicked.connect(self.open_big_tile_names_dialog)
         self.kml_style_button.clicked.connect(self.open_kml_style_dialog)
         self.preview_fit_button.clicked.connect(self.preview_canvas.fit_to_view)
@@ -802,6 +873,7 @@ class MainWindow(QMainWindow):
         self.preview_zoom_out_button.clicked.connect(self.preview_canvas.zoom_out)
         self.preview_canvas.selectionChanged.connect(self._on_preview_selection_changed)
         self.open_folder_button.clicked.connect(self.open_output_folder)
+        self.export_open_folder_button.clicked.connect(self.open_output_folder)
 
     def _schedule_stats_update(self) -> None:
         if hasattr(self, "_stats_timer"):
@@ -809,6 +881,11 @@ class MainWindow(QMainWindow):
 
     def _on_numbering_mode_changed(self, _index: int | None = None) -> None:
         self._sync_numbering_controls()
+        self._schedule_stats_update()
+
+    def _on_export_format_changed(self, _index: int | None = None) -> None:
+        self._sync_export_filename_suffix()
+        self._update_export_format_description()
         self._schedule_stats_update()
 
     def _sync_numbering_controls(self) -> None:
@@ -829,6 +906,54 @@ class MainWindow(QMainWindow):
             self.small_numbering_start_label.setText("Стартовый угол")
             self.small_numbering_start.setToolTip("Из какого угла начинается нумерация малых квадратов.")
 
+    def _sync_export_filename_suffix(self) -> None:
+        export_mode = ExportMode(self.export_format.currentData())
+        export_format = export_format_for_mode(export_mode)
+        previous_format = export_format_for_mode(self._last_export_mode)
+        current_filename = self.export_filename.text().strip().strip('"')
+        if not current_filename or current_filename == previous_format.default_filename:
+            next_filename = export_format.default_filename
+        else:
+            next_filename = normalize_export_filename(current_filename, export_format)
+
+        if next_filename != self.export_filename.text():
+            self.export_filename.blockSignals(True)
+            self.export_filename.setText(next_filename)
+            self.export_filename.blockSignals(False)
+
+        self._last_export_mode = export_mode
+        self._update_export_summary_from_latest()
+
+    def _update_export_format_description(self) -> None:
+        export_format = export_format_for_mode(ExportMode(self.export_format.currentData()))
+        self.export_format_description.setText(export_format.description)
+
+    def _update_export_summary(self, stats: GridStats | None, options: GridOptions) -> None:
+        out_path = self._current_output_path(options)
+        self.export_summary.setPlainText(format_export_summary(stats, options, out_path))
+
+    def _set_export_summary_error(self, message: str) -> None:
+        try:
+            options = self._current_options()
+            export_format = export_format_for_mode(options.export_mode)
+            out_path = self._current_output_path(options)
+            self.export_summary.setPlainText(
+                f"{export_format.title}\n"
+                f"{export_format.description}\n"
+                f"Путь: {out_path}\n\n"
+                f"Экспорт сейчас недоступен:\n- {message}"
+            )
+        except Exception:
+            self.export_summary.setPlainText(f"Экспорт сейчас недоступен:\n- {message}")
+
+    @Slot()
+    def _update_export_summary_from_latest(self) -> None:
+        try:
+            options = self._current_options()
+            self._update_export_summary(self._latest_stats, options)
+        except Exception as exc:
+            self._set_export_summary_error(str(exc))
+
     def _current_bounds(self) -> Bounds:
         return normalize_bounds(
             parse_meter(self.x_nw.text()),
@@ -838,7 +963,7 @@ class MainWindow(QMainWindow):
         )
 
     def _current_options(self) -> GridOptions:
-        export_mode = ExportMode.ZIP if self.export_zip.isChecked() else ExportMode.KML
+        export_mode = ExportMode(self.export_format.currentData())
         return GridOptions(
             include_1000=self.include_1000.isChecked(),
             include_100=self.include_100.isChecked(),
@@ -863,20 +988,24 @@ class MainWindow(QMainWindow):
             self._latest_options = options
             self.stats_text.setPlainText(_format_stats(stats, options))
             self.generate_button.setEnabled(not stats.errors and self._thread is None)
+            self.export_generate_button.setEnabled(not stats.errors and self._thread is None)
             self._update_big_tile_names_summary(stats, options)
             self._update_kml_style_summary()
             self._update_preview(stats, options)
+            self._update_export_summary(stats, options)
             self.status_label.setText("Есть ошибки" if stats.errors else "Готово к генерации")
         except Exception as exc:
             self._latest_stats = None
             self._latest_options = None
             self.stats_text.setPlainText(f"Ошибка ввода: {exc}")
             self.generate_button.setEnabled(False)
+            self.export_generate_button.setEnabled(False)
             self.big_tile_names_button.setEnabled(False)
             self.big_tile_names_summary.setText("Имена 1000x1000 доступны после корректного расчета сетки.")
             self.preview_canvas.set_message(f"Предпросмотр недоступен: {exc}")
             self.preview_summary.setText("Предпросмотр появится после исправления координат.")
             self.preview_focus_button.setEnabled(False)
+            self._set_export_summary_error(str(exc))
             self.status_label.setText("Проверьте координаты")
 
     @Slot()
@@ -889,8 +1018,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Проверка", "\n".join(stats.errors))
                 return
 
-            out_path = self._select_output_path(options)
-            if out_path is None:
+            out_path = self._current_output_path(options)
+            self._sync_export_filename_suffix()
+            if out_path.exists() and not self._confirm_overwrite(out_path):
                 return
         except Exception as exc:
             QMessageBox.critical(self, "Ошибка", str(exc))
@@ -898,24 +1028,55 @@ class MainWindow(QMainWindow):
 
         self._start_export(out_path, bounds, options)
 
-    def _select_output_path(self, options: GridOptions) -> Path | None:
-        if options.export_mode == ExportMode.ZIP:
-            selected, _ = QFileDialog.getSaveFileName(
-                self,
-                "Сохранить ZIP",
-                "aq_grid_tiles.zip",
-                "ZIP archive (*.zip)",
-            )
-        else:
-            selected, _ = QFileDialog.getSaveFileName(
-                self,
-                "Сохранить KML",
-                "aq_grid.kml",
-                "KML file (*.kml)",
-            )
+    def _current_output_path(self, options: GridOptions) -> Path:
+        export_format = export_format_for_mode(options.export_mode)
+        out_path = output_path_for(self.export_folder.text(), self.export_filename.text(), export_format)
+        if out_path.name in ("", ".", ".."):
+            raise ValueError("Укажите имя файла для экспорта.")
+        if out_path.parent.exists() and not out_path.parent.is_dir():
+            raise ValueError(f"Папка экспорта не является папкой: {out_path.parent}")
+        return out_path
+
+    def _confirm_overwrite(self, out_path: Path) -> bool:
+        result = QMessageBox.question(
+            self,
+            "Файл уже существует",
+            f"Файл уже существует:\n{out_path}\n\nПерезаписать?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return result == QMessageBox.StandardButton.Yes
+
+    @Slot()
+    def choose_export_folder(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку экспорта",
+            self.export_folder.text() or str(default_export_directory()),
+        )
+        if selected:
+            self.export_folder.setText(selected)
+
+    @Slot()
+    def choose_export_file(self) -> None:
+        options = self._current_options()
+        export_format = export_format_for_mode(options.export_mode)
+        try:
+            current_path = self._current_output_path(options)
+        except Exception:
+            current_path = default_export_directory() / export_format.default_filename
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            export_format.dialog_title,
+            str(current_path),
+            export_format.dialog_filter,
+        )
         if not selected:
-            return None
-        return Path(selected)
+            return
+
+        selected_path = Path(selected)
+        self.export_folder.setText(str(selected_path.parent))
+        self.export_filename.setText(normalize_export_filename(selected_path.name, export_format))
 
     @Slot()
     def open_big_tile_names_dialog(self) -> None:
@@ -1048,8 +1209,18 @@ class MainWindow(QMainWindow):
 
     def _set_export_running(self, running: bool) -> None:
         self.generate_button.setEnabled(not running)
+        self.export_generate_button.setEnabled(not running)
         self.big_tile_names_button.setEnabled(not running and self.include_1000.isChecked())
         self.kml_style_button.setEnabled(not running)
+        for widget in (
+            self.export_format,
+            self.export_folder,
+            self.export_filename,
+            self.export_folder_button,
+            self.export_file_button,
+        ):
+            widget.setEnabled(not running)
+        self.export_open_folder_button.setEnabled(not running and self._last_output_path is not None)
         self.progress.setVisible(running)
         self.progress.setRange(0, 0)
         self.status_label.setText("Генерация..." if running else "Готово")
@@ -1065,6 +1236,7 @@ class MainWindow(QMainWindow):
     def _on_export_finished(self, path_value: str) -> None:
         self._last_output_path = Path(path_value)
         self.open_folder_button.setEnabled(True)
+        self.export_open_folder_button.setEnabled(True)
         self.status_label.setText(f"Готово: {self._last_output_path.name}")
         QMessageBox.information(self, "Готово", f"Файл создан:\n{path_value}")
 
