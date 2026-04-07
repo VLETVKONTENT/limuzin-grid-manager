@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QSpinBox,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -55,6 +56,7 @@ from limuzin_grid_manager.core.models import (
     normalize_rgb_color,
 )
 from limuzin_grid_manager.core.stats import calculate_grid_stats
+from limuzin_grid_manager.ui.preview import GridPreviewWidget
 
 
 class ExportWorker(QObject):
@@ -456,6 +458,8 @@ class MainWindow(QMainWindow):
         self._last_output_path: Path | None = None
         self._thread: QThread | None = None
         self._worker: ExportWorker | None = None
+        self._latest_stats: GridStats | None = None
+        self._latest_options: GridOptions | None = None
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
 
@@ -511,15 +515,14 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self._build_export_group())
         left_layout.addStretch(1)
 
-        stats_title = QLabel("Проверка и расчет")
-        stats_title.setObjectName("PanelTitle")
-        right_layout.addWidget(stats_title)
+        workspace_title = QLabel("Рабочая область")
+        workspace_title.setObjectName("PanelTitle")
+        right_layout.addWidget(workspace_title)
 
-        self.stats_text = QTextEdit()
-        self.stats_text.setReadOnly(True)
-        self.stats_text.setMinimumHeight(330)
-        self.stats_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        right_layout.addWidget(self.stats_text, 1)
+        self.workspace_tabs = QTabWidget()
+        self.workspace_tabs.addTab(self._build_preview_tab(), "Предпросмотр")
+        self.workspace_tabs.addTab(self._build_stats_tab(), "Проверка")
+        right_layout.addWidget(self.workspace_tabs, 1)
 
         self.status_label = QLabel("Готово")
         self.status_label.setObjectName("Status")
@@ -545,6 +548,59 @@ class MainWindow(QMainWindow):
 
         footer.addWidget(self.generate_button)
         footer.addWidget(self.open_folder_button)
+
+    def _build_preview_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        self.preview_summary = QLabel("Предпросмотр появится после расчета сетки.")
+        self.preview_summary.setObjectName("Hint")
+        self.preview_summary.setWordWrap(True)
+        layout.addWidget(self.preview_summary)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        layout.addLayout(controls)
+
+        self.preview_fit_button = QPushButton("Вписать всё")
+        self.preview_focus_button = QPushButton("К выбранному")
+        self.preview_focus_button.setEnabled(False)
+        self.preview_zoom_out_button = QPushButton("-")
+        self.preview_zoom_in_button = QPushButton("+")
+        self.preview_zoom_out_button.setFixedWidth(40)
+        self.preview_zoom_in_button.setFixedWidth(40)
+
+        controls.addWidget(self.preview_fit_button)
+        controls.addWidget(self.preview_focus_button)
+        controls.addStretch(1)
+        controls.addWidget(self.preview_zoom_out_button)
+        controls.addWidget(self.preview_zoom_in_button)
+
+        self.preview_canvas = GridPreviewWidget()
+        layout.addWidget(self.preview_canvas, 1)
+
+        hint = QLabel(
+            "Колесо мыши масштабирует, перетаскивание двигает схему. "
+            "Клик по 1000x1000 выбирает квадрат для детального просмотра 100x100."
+        )
+        hint.setObjectName("Hint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        return tab
+
+    def _build_stats_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        self.stats_text = QTextEdit()
+        self.stats_text.setReadOnly(True)
+        self.stats_text.setMinimumHeight(330)
+        self.stats_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.stats_text, 1)
+        return tab
 
     def _build_coordinates_group(self) -> QGroupBox:
         group = QGroupBox("Координаты, метры")
@@ -740,6 +796,11 @@ class MainWindow(QMainWindow):
         self.generate_button.clicked.connect(self.generate)
         self.big_tile_names_button.clicked.connect(self.open_big_tile_names_dialog)
         self.kml_style_button.clicked.connect(self.open_kml_style_dialog)
+        self.preview_fit_button.clicked.connect(self.preview_canvas.fit_to_view)
+        self.preview_focus_button.clicked.connect(self.preview_canvas.focus_selected_big_tile)
+        self.preview_zoom_in_button.clicked.connect(self.preview_canvas.zoom_in)
+        self.preview_zoom_out_button.clicked.connect(self.preview_canvas.zoom_out)
+        self.preview_canvas.selectionChanged.connect(self._on_preview_selection_changed)
         self.open_folder_button.clicked.connect(self.open_output_folder)
 
     def _schedule_stats_update(self) -> None:
@@ -798,16 +859,24 @@ class MainWindow(QMainWindow):
             bounds = self._current_bounds()
             options = self._current_options()
             stats = calculate_grid_stats(bounds, options)
+            self._latest_stats = stats
+            self._latest_options = options
             self.stats_text.setPlainText(_format_stats(stats, options))
             self.generate_button.setEnabled(not stats.errors and self._thread is None)
             self._update_big_tile_names_summary(stats, options)
             self._update_kml_style_summary()
+            self._update_preview(stats, options)
             self.status_label.setText("Есть ошибки" if stats.errors else "Готово к генерации")
         except Exception as exc:
+            self._latest_stats = None
+            self._latest_options = None
             self.stats_text.setPlainText(f"Ошибка ввода: {exc}")
             self.generate_button.setEnabled(False)
             self.big_tile_names_button.setEnabled(False)
             self.big_tile_names_summary.setText("Имена 1000x1000 доступны после корректного расчета сетки.")
+            self.preview_canvas.set_message(f"Предпросмотр недоступен: {exc}")
+            self.preview_summary.setText("Предпросмотр появится после исправления координат.")
+            self.preview_focus_button.setEnabled(False)
             self.status_label.setText("Проверьте координаты")
 
     @Slot()
@@ -909,6 +978,55 @@ class MainWindow(QMainWindow):
 
     def _update_kml_style_summary(self) -> None:
         self.kml_style_summary.setText(_format_kml_style_summary(self.kml_style))
+
+    def _update_preview(self, stats: GridStats, options: GridOptions) -> None:
+        if stats.errors:
+            self.preview_canvas.set_message("Предпросмотр недоступен:\n" + "\n".join(stats.errors))
+            self._update_preview_summary(stats, options)
+            return
+
+        self.preview_canvas.set_preview(stats, options)
+        self._update_preview_summary(stats, options)
+
+    def _update_preview_summary(self, stats: GridStats, options: GridOptions) -> None:
+        if stats.errors:
+            self.preview_summary.setText("Предпросмотр появится после исправления ошибок в расчете.")
+            self.preview_focus_button.setEnabled(False)
+            return
+
+        if stats.big_grid is not None:
+            selected = self.preview_canvas.selected_big_number()
+            names = dict(options.big_tile_names)
+            selected_text = f"Выбран квадрат {selected:03d}" if selected > 0 else "Квадрат не выбран"
+            if selected > 0 and names.get(selected):
+                selected_text += f": {names[selected]}"
+
+            detail = "100x100 внутри выбранного квадрата показаны в этой же схеме."
+            if not options.include_100:
+                detail = "Сетка 100x100 выключена, поэтому внутри выбранного квадрата показана только рамка."
+
+            self.preview_summary.setText(
+                f"1000x1000: {stats.big_grid.rows} x {stats.big_grid.cols} = {stats.big_grid.total}. "
+                f"{selected_text}. {detail}"
+            )
+            self.preview_focus_button.setEnabled(selected > 0)
+            return
+
+        if stats.small_grid is not None:
+            self.preview_summary.setText(
+                f"100x100: {stats.small_grid.rows} x {stats.small_grid.cols} = {stats.small_grid.total}. "
+                f"Нумерация: {_format_small_numbering_options(options)}."
+            )
+            self.preview_focus_button.setEnabled(False)
+            return
+
+        self.preview_summary.setText("Включите хотя бы одну сетку, чтобы увидеть предпросмотр.")
+        self.preview_focus_button.setEnabled(False)
+
+    @Slot(int)
+    def _on_preview_selection_changed(self, _number: int) -> None:
+        if self._latest_stats is not None and self._latest_options is not None:
+            self._update_preview_summary(self._latest_stats, self._latest_options)
 
     def _start_export(self, out_path: Path, bounds: Bounds, options: GridOptions) -> None:
         self._thread = QThread(self)
