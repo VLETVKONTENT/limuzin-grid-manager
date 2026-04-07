@@ -18,11 +18,18 @@ class ExportMode(StrEnum):
 class SmallNumberingMode(StrEnum):
     LINEAR = "linear"
     SNAKE = "snake"
+    SPIRAL_CENTER_OUT = "spiral_center_out"
+    SPIRAL_EDGE_IN = "spiral_edge_in"
 
 
 class SmallNumberingDirection(StrEnum):
     BY_ROWS = "by_rows"
     BY_COLUMNS = "by_columns"
+
+
+class SpiralDirection(StrEnum):
+    CLOCKWISE = "clockwise"
+    COUNTERCLOCKWISE = "counterclockwise"
 
 
 class StartCorner(StrEnum):
@@ -54,6 +61,7 @@ class GridOptions:
     small_numbering_mode: SmallNumberingMode = SmallNumberingMode.SNAKE
     small_numbering_direction: SmallNumberingDirection = SmallNumberingDirection.BY_ROWS
     small_numbering_start_corner: StartCorner = StartCorner.NW
+    small_spiral_direction: SpiralDirection = SpiralDirection.CLOCKWISE
     rounding_mode: RoundingMode = RoundingMode.IN
     export_mode: ExportMode = ExportMode.KML
 
@@ -65,6 +73,7 @@ class GridOptions:
             small_numbering_mode=SmallNumberingMode(self.small_numbering_mode),
             small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction),
             small_numbering_start_corner=StartCorner(self.small_numbering_start_corner),
+            small_spiral_direction=SpiralDirection(self.small_spiral_direction),
             rounding_mode=RoundingMode(self.rounding_mode),
             export_mode=ExportMode(self.export_mode),
         )

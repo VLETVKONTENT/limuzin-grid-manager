@@ -4,7 +4,14 @@ import pytest
 
 from limuzin_grid_manager.core.crs import infer_gk_zone
 from limuzin_grid_manager.core.geometry import normalize_bounds, rect_corners_ck42, round_bounds, snake_index
-from limuzin_grid_manager.core.models import Bounds, RoundingMode, SmallNumberingDirection, SmallNumberingMode, StartCorner
+from limuzin_grid_manager.core.models import (
+    Bounds,
+    RoundingMode,
+    SmallNumberingDirection,
+    SmallNumberingMode,
+    SpiralDirection,
+    StartCorner,
+)
 from limuzin_grid_manager.core.numbering import small_number_index
 
 
@@ -76,13 +83,50 @@ def test_small_numbering_column_snake() -> None:
     assert values == [5, 4, 3]
 
 
+def test_spiral_center_out_10x10_default_anchor_clockwise() -> None:
+    assert small_number_index(
+        4,
+        4,
+        10,
+        10,
+        SmallNumberingMode.SPIRAL_CENTER_OUT,
+        SmallNumberingDirection.BY_ROWS,
+        StartCorner.NW,
+        SpiralDirection.CLOCKWISE,
+    ) == 0
+    assert small_number_index(4, 5, 10, 10, "spiral_center_out", "by_rows", "NW", "clockwise") == 1
+    assert small_number_index(5, 5, 10, 10, "spiral_center_out", "by_rows", "NW", "clockwise") == 2
+    assert small_number_index(5, 4, 10, 10, "spiral_center_out", "by_rows", "NW", "clockwise") == 3
+
+
+def test_spiral_center_out_10x10_default_anchor_counterclockwise() -> None:
+    assert small_number_index(4, 4, 10, 10, "spiral_center_out", "by_rows", "NW", "counterclockwise") == 0
+    assert small_number_index(5, 4, 10, 10, "spiral_center_out", "by_rows", "NW", "counterclockwise") == 1
+    assert small_number_index(5, 5, 10, 10, "spiral_center_out", "by_rows", "NW", "counterclockwise") == 2
+    assert small_number_index(4, 5, 10, 10, "spiral_center_out", "by_rows", "NW", "counterclockwise") == 3
+
+
+def test_spiral_edge_in_10x10_default_anchor_clockwise() -> None:
+    assert small_number_index(0, 9, 10, 10, "spiral_edge_in", "by_rows", "NW", "clockwise") == 0
+    assert small_number_index(4, 4, 10, 10, "spiral_edge_in", "by_rows", "NW", "clockwise") == 99
+    assert small_number_index(5, 4, 10, 10, "spiral_edge_in", "by_rows", "NW", "clockwise") == 98
+
+
+def test_spiral_center_anchor_variants() -> None:
+    assert small_number_index(4, 4, 10, 10, "spiral_center_out", "by_rows", "NW", "clockwise") == 0
+    assert small_number_index(4, 5, 10, 10, "spiral_center_out", "by_rows", "NE", "clockwise") == 0
+    assert small_number_index(5, 4, 10, 10, "spiral_center_out", "by_rows", "SW", "clockwise") == 0
+    assert small_number_index(5, 5, 10, 10, "spiral_center_out", "by_rows", "SE", "clockwise") == 0
+
+
 def test_small_numbering_has_no_duplicates_for_10x10_modes() -> None:
     for mode in SmallNumberingMode:
         for direction in SmallNumberingDirection:
             for corner in StartCorner:
-                values = {
-                    small_number_index(row, col, 10, 10, mode, direction, corner)
-                    for row in range(10)
-                    for col in range(10)
-                }
-                assert values == set(range(100))
+                for spiral_direction in SpiralDirection:
+                    values = {
+                        small_number_index(row, col, 10, 10, mode, direction, corner, spiral_direction)
+                        for row in range(10)
+                        for col in range(10)
+                    }
+                    assert values == set(range(100))

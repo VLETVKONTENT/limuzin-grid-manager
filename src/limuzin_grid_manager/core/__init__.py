@@ -12,6 +12,7 @@ from limuzin_grid_manager.core.models import (
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
+    SpiralDirection,
     StartCorner,
 )
 from limuzin_grid_manager.core.numbering import small_number, small_number_index
@@ -23,6 +24,7 @@ __all__ = [
     "RoundingMode",
     "SmallNumberingDirection",
     "SmallNumberingMode",
+    "SpiralDirection",
     "StartCorner",
     "count_grid",
     "normalize_bounds",

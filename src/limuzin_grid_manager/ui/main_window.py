@@ -40,6 +40,7 @@ from limuzin_grid_manager.core.models import (
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
+    SpiralDirection,
     StartCorner,
 )
 from limuzin_grid_manager.core.stats import calculate_grid_stats
@@ -158,12 +159,10 @@ class MainWindow(QMainWindow):
 
         footer.addStretch(1)
 
-        self.check_button = QPushButton("Проверить")
         self.generate_button = QPushButton("Сгенерировать")
         self.open_folder_button = QPushButton("Открыть папку")
         self.open_folder_button.setEnabled(False)
 
-        footer.addWidget(self.check_button)
         footer.addWidget(self.generate_button)
         footer.addWidget(self.open_folder_button)
 
@@ -227,17 +226,29 @@ class MainWindow(QMainWindow):
         self.small_numbering_mode = self._wide_combo()
         self.small_numbering_mode.addItem("Змейка", SmallNumberingMode.SNAKE.value)
         self.small_numbering_mode.addItem("Обычная", SmallNumberingMode.LINEAR.value)
+        self.small_numbering_mode.addItem("Спираль от центра наружу", SmallNumberingMode.SPIRAL_CENTER_OUT.value)
+        self.small_numbering_mode.addItem("Спираль от края к центру", SmallNumberingMode.SPIRAL_EDGE_IN.value)
         self.small_numbering_mode.setToolTip("Как присваивать номера малым квадратам 100x100.")
         controls.addWidget(self.small_numbering_mode)
 
-        controls.addWidget(self._field_label("Направление"))
+        self.small_numbering_direction_label = self._field_label("Направление")
+        controls.addWidget(self.small_numbering_direction_label)
         self.small_numbering_direction = self._wide_combo()
         self.small_numbering_direction.addItem("По строкам", SmallNumberingDirection.BY_ROWS.value)
         self.small_numbering_direction.addItem("По колонкам", SmallNumberingDirection.BY_COLUMNS.value)
         self.small_numbering_direction.setToolTip("По строкам или по колонкам внутри сетки 100x100.")
         controls.addWidget(self.small_numbering_direction)
 
-        controls.addWidget(self._field_label("Стартовый угол"))
+        self.small_spiral_direction_label = self._field_label("Направление спирали")
+        controls.addWidget(self.small_spiral_direction_label)
+        self.small_spiral_direction = self._wide_combo()
+        self.small_spiral_direction.addItem("По часовой стрелке", SpiralDirection.CLOCKWISE.value)
+        self.small_spiral_direction.addItem("Против часовой стрелки", SpiralDirection.COUNTERCLOCKWISE.value)
+        self.small_spiral_direction.setToolTip("В какую сторону закручивается спираль нумерации.")
+        controls.addWidget(self.small_spiral_direction)
+
+        self.small_numbering_start_label = self._field_label("Стартовый угол")
+        controls.addWidget(self.small_numbering_start_label)
         self.small_numbering_start = self._wide_combo()
         self.small_numbering_start.addItem("NW — верхний левый", StartCorner.NW.value)
         self.small_numbering_start.addItem("NE — верхний правый", StartCorner.NE.value)
@@ -245,6 +256,7 @@ class MainWindow(QMainWindow):
         self.small_numbering_start.addItem("SE — нижний правый", StartCorner.SE.value)
         self.small_numbering_start.setToolTip("Из какого угла начинается нумерация малых квадратов.")
         controls.addWidget(self.small_numbering_start)
+        self._sync_numbering_controls()
 
         layout.addLayout(controls)
 
@@ -302,17 +314,39 @@ class MainWindow(QMainWindow):
             widget.toggled.connect(self._schedule_stats_update)
 
         self.rounding_mode.currentIndexChanged.connect(self._schedule_stats_update)
-        self.small_numbering_mode.currentIndexChanged.connect(self._schedule_stats_update)
+        self.small_numbering_mode.currentIndexChanged.connect(self._on_numbering_mode_changed)
         self.small_numbering_direction.currentIndexChanged.connect(self._schedule_stats_update)
+        self.small_spiral_direction.currentIndexChanged.connect(self._schedule_stats_update)
         self.small_numbering_start.currentIndexChanged.connect(self._schedule_stats_update)
         self.export_kml.toggled.connect(self._schedule_stats_update)
-        self.check_button.clicked.connect(self.update_stats)
         self.generate_button.clicked.connect(self.generate)
         self.open_folder_button.clicked.connect(self.open_output_folder)
 
     def _schedule_stats_update(self) -> None:
         if hasattr(self, "_stats_timer"):
             self._stats_timer.start()
+
+    def _on_numbering_mode_changed(self, _index: int | None = None) -> None:
+        self._sync_numbering_controls()
+        self._schedule_stats_update()
+
+    def _sync_numbering_controls(self) -> None:
+        mode = SmallNumberingMode(self.small_numbering_mode.currentData())
+        is_spiral = _small_numbering_is_spiral(mode)
+
+        self.small_numbering_direction_label.setVisible(not is_spiral)
+        self.small_numbering_direction.setVisible(not is_spiral)
+        self.small_spiral_direction_label.setVisible(is_spiral)
+        self.small_spiral_direction.setVisible(is_spiral)
+
+        if is_spiral:
+            self.small_numbering_start_label.setText("Якорь центра")
+            self.small_numbering_start.setToolTip(
+                "Для четной сетки выбирает один из центральных квадратов, например NW в сетке 10x10."
+            )
+        else:
+            self.small_numbering_start_label.setText("Стартовый угол")
+            self.small_numbering_start.setToolTip("Из какого угла начинается нумерация малых квадратов.")
 
     def _current_bounds(self) -> Bounds:
         return normalize_bounds(
@@ -331,6 +365,7 @@ class MainWindow(QMainWindow):
             small_numbering_mode=SmallNumberingMode(self.small_numbering_mode.currentData()),
             small_numbering_direction=SmallNumberingDirection(self.small_numbering_direction.currentData()),
             small_numbering_start_corner=StartCorner(self.small_numbering_start.currentData()),
+            small_spiral_direction=SpiralDirection(self.small_spiral_direction.currentData()),
             rounding_mode=RoundingMode(self.rounding_mode.currentData()),
             export_mode=export_mode,
         )
@@ -407,7 +442,6 @@ class MainWindow(QMainWindow):
 
     def _set_export_running(self, running: bool) -> None:
         self.generate_button.setEnabled(not running)
-        self.check_button.setEnabled(not running)
         self.progress.setVisible(running)
         self.progress.setRange(0, 0)
         self.status_label.setText("Генерация..." if running else "Готово")
@@ -544,12 +578,7 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
     lines.append("")
     lines.append("KML-стиль: стандартная непрозрачная линия, заливка отключена.")
     if options.include_100:
-        lines.append(
-            "Нумерация 100x100: "
-            f"{_small_numbering_label(options.small_numbering_mode)}, "
-            f"{_small_direction_label(options.small_numbering_direction)}, "
-            f"старт {options.small_numbering_start_corner}."
-        )
+        lines.append(f"Нумерация 100x100: {_format_small_numbering_options(options)}.")
 
     if stats.warnings:
         lines.append("")
@@ -564,9 +593,27 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
     return "\n".join(lines)
 
 
+def _format_small_numbering_options(options: GridOptions) -> str:
+    if _small_numbering_is_spiral(options.small_numbering_mode):
+        return (
+            f"{_small_numbering_label(options.small_numbering_mode)}, "
+            f"{_spiral_direction_label(options.small_spiral_direction)}, "
+            f"якорь центра {options.small_numbering_start_corner}"
+        )
+    return (
+        f"{_small_numbering_label(options.small_numbering_mode)}, "
+        f"{_small_direction_label(options.small_numbering_direction)}, "
+        f"старт {options.small_numbering_start_corner}"
+    )
+
+
 def _small_numbering_label(mode: SmallNumberingMode) -> str:
     if mode == SmallNumberingMode.SNAKE:
         return "змейка"
+    if mode == SmallNumberingMode.SPIRAL_CENTER_OUT:
+        return "спираль от центра наружу"
+    if mode == SmallNumberingMode.SPIRAL_EDGE_IN:
+        return "спираль от края к центру"
     return "обычная"
 
 
@@ -574,3 +621,13 @@ def _small_direction_label(direction: SmallNumberingDirection) -> str:
     if direction == SmallNumberingDirection.BY_COLUMNS:
         return "по колонкам"
     return "по строкам"
+
+
+def _spiral_direction_label(direction: SpiralDirection) -> str:
+    if direction == SpiralDirection.COUNTERCLOCKWISE:
+        return "против часовой стрелки"
+    return "по часовой стрелке"
+
+
+def _small_numbering_is_spiral(mode: SmallNumberingMode) -> bool:
+    return mode in (SmallNumberingMode.SPIRAL_CENTER_OUT, SmallNumberingMode.SPIRAL_EDGE_IN)

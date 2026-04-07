@@ -14,6 +14,7 @@ from limuzin_grid_manager.core.models import (
     RoundingMode,
     SmallNumberingDirection,
     SmallNumberingMode,
+    SpiralDirection,
     StartCorner,
 )
 
@@ -87,6 +88,31 @@ def test_export_uses_custom_small_numbering(tmp_path: Path) -> None:
     ]
     assert placemark_names[0] == "001"
     assert placemark_names[1:11] == ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]
+
+
+def test_export_uses_spiral_small_numbering(tmp_path: Path) -> None:
+    out_path = tmp_path / "spiral.kml"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        small_numbering_mode=SmallNumberingMode.SPIRAL_CENTER_OUT,
+        small_numbering_direction=SmallNumberingDirection.BY_ROWS,
+        small_numbering_start_corner=StartCorner.NW,
+        small_spiral_direction=SpiralDirection.CLOCKWISE,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+
+    write_kml_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+    placemark_names = [
+        node.text
+        for node in root.findall(".//{http://www.opengis.net/kml/2.2}Placemark/{http://www.opengis.net/kml/2.2}name")
+    ]
+    assert placemark_names[0] == "001"
+    assert placemark_names[1:11] == ["73", "74", "75", "76", "77", "78", "79", "80", "81", "82"]
 
 
 def test_zone_crossing_raises(tmp_path: Path) -> None:

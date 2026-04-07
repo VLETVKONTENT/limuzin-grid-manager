@@ -88,6 +88,7 @@ def write_zip_per_big_tile(
         small_numbering_mode=options.small_numbering_mode,
         small_numbering_direction=options.small_numbering_direction,
         small_numbering_start_corner=options.small_numbering_start_corner,
+        small_spiral_direction=options.small_spiral_direction,
         rounding_mode=options.rounding_mode,
         export_mode=ExportMode.ZIP,
     )
@@ -236,4 +237,5 @@ def _small_number_for_cell(row: int, col: int, rows: int, cols: int, options: Gr
         options.small_numbering_mode,
         options.small_numbering_direction,
         options.small_numbering_start_corner,
+        options.small_spiral_direction,
     )
