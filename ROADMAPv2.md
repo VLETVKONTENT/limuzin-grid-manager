@@ -26,6 +26,11 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-08 10:05 Europe/Moscow: Реализовано ядро `v1.2.0`: добавлены `core/geojson.py`, `core/csv_export.py`, новые `ExportMode`, записи в реестре форматов, маршрутизация через `export_grid()`, оценки размера, UI-сводки, проектная совместимость и автотесты.
 - [x] 2026-04-08 10:18 Europe/Moscow: Завершен `v1.2.0`: обновлены версия, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `versions/GRIDVERSIONS.md`, `versions/v1.2.0.md`, `.gitignore`; выполнены `uv lock --offline`, offline `pytest` (`55 passed`), offline `compileall`, сборка EXE и smoke-запуск.
 - [x] 2026-04-08 Europe/Moscow: Пользователь вручную протестировал `v1.2.0` и подтвердил, что внесенные изменения работают; версия переведена из рабочей в стабильную перед публикацией.
+- [x] 2026-04-08 Europe/Moscow: Начата реализация `v1.3.0`: перечитаны `PLANS.md`, секция `v1.3.0` этого roadmap, `GRIDBASE.md`, текущие `ui/main_window.py`, `ui/preview.py`, проектные настройки и UI-smoke тесты; подтвержден объем без map-backed preview и без большого редизайна.
+- [x] 2026-04-08 Europe/Moscow: Реализован `v1.3.0`: добавлен `ui/themes.py` с темами `system/light`, `dark` и `high-contrast`, тема хранится в `QSettings`, `GridPreviewWidget` получил палитру текущей темы, а вкладка `Экспорт` перестала держать жесткую минимальную ширину и горизонтальную прокрутку.
+- [x] 2026-04-08 Europe/Moscow: Проверен `v1.3.0`: `uv lock --offline`, `uv run --offline --extra dev pytest` (`56 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск `dist/LIMUZIN_GRID_MANAGER.exe` с `FileVersion` и `ProductVersion` `1.3.0.0`.
+- [x] 2026-04-08 Europe/Moscow: По визуальной проверке пользователя в `v1.3.0` исправлена верхняя панель проекта: пресеты и кнопка применения разведены по ширине, а меню `Проект` получило отступ под горячие клавиши.
+- [x] 2026-04-08 Europe/Moscow: Пользователь вручную протестировал текущую `v1.3.0` и подтвердил, что внесенные изменения работают; версия переведена из рабочей в стабильную перед публикацией.
 
 ## Surprises & Discoveries
 
@@ -43,6 +48,12 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: То же предупреждение hook-pyproj сохранилось при offline-сборке `v1.2.0`, но не помешало созданию EXE и smoke-запуску.
   Evidence: `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` завершился с `Build complete!`; `dist/LIMUZIN_GRID_MANAGER.exe` имеет `FileVersion` и `ProductVersion` `1.2.0.0`, smoke-запуск показал `ExitedWithin3Seconds : False`.
+
+- Observation: Для тем оказалось недостаточно вынести только QSS из `MainWindow`: 2D-предпросмотр рисует фон, подписи и выделение через `QPainter` с собственными цветами.
+  Evidence: `src/limuzin_grid_manager/ui/preview.py` использовал жестко заданные цвета вроде `#f7f9fc`, `#ffffff`, `#111820` и `#1565c0`, поэтому в `ui/themes.py` добавлена `PreviewPalette`.
+
+- Observation: Предупреждение hook-pyproj сохранилось и при offline-сборке `v1.3.0`, но EXE создан и smoke-запуск прошел по прежнему критерию.
+  Evidence: `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` завершился с `Build complete!`; `dist/LIMUZIN_GRID_MANAGER.exe` имеет `FileVersion` и `ProductVersion` `1.3.0.0`, smoke-запуск показал `ExitedWithin3Seconds : False`.
 
 ## Decision Log
 
@@ -78,6 +89,14 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: GeoJSON `FeatureCollection` можно безопасно сформировать как последовательность features с запятыми между ними, не накапливая крупный список в памяти; CSV естественно пишется построчно и должен получить UTF-8 with BOM для Excel в русской локали.
   Date/Author: 2026-04-08, Codex.
 
+- Decision: Для `v1.3.0` темы вынесены в `src/limuzin_grid_manager/ui/themes.py` как QSS + палитра предпросмотра, а не как поля `.lgm.json` или часть core-моделей.
+  Rationale: Тема влияет только на локальное отображение интерфейса, а `GridPreviewWidget` рисует часть UI вручную через `QPainter`, поэтому ему нужен маленький UI-уровневый набор цветов без изменения экспортной и проектной схемы.
+  Date/Author: 2026-04-08, Codex.
+
+- Decision: Для `v1.3.0` вкладка `Экспорт` оптимизирована внутри `MainWindow`, без вынесения отдельного `ui/export_tab.py`.
+  Rationale: Требование этапа - умеренная оптимизация без большого редизайна. После `v1.2.0` вкладка уже была изолирована методом `_build_export_tab()`, поэтому достаточно убрать жесткую минимальную ширину, отключить горизонтальную прокрутку и скорректировать sizing combo-box-ов.
+  Date/Author: 2026-04-08, Codex.
+
 ## Outcomes & Retrospective
 
 Текущая задача roadmap-файла выполнена: создан корневой `ROADMAPv2.md`, который можно дать будущей сессии Codex или человеку без истории этого разговора. Реализация кода `v2.0` теперь начата: этап `v1.1.0` выполнен и принят пользователем как стабильная версия после ручного теста.
@@ -87,6 +106,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 Итог `v1.2.0`: добавлены GeoJSON и CSV как отдельные режимы экспорта и отдельные core writer-ы без новых зависимостей. GeoJSON пишет `FeatureCollection` с `Polygon` в WGS84 и свойствами ячеек, CSV пишет UTF-8 with BOM и разделитель `;` с границами СК-42 и центрами WGS84. UI, проектный `export_format_id`, сводки, `.gitignore`, документация версии и EXE-ресурсы обновлены. Проверка: `uv lock --offline`, `uv run --offline --extra dev pytest` (`55 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск. Многозонность остается для следующих milestone-этапов.
 
 После ручного теста пользователь подтвердил, что изменения `v1.2.0` работают. Статус версии изменен на стабильный, и версия готова к commit, tag, push и GitHub Release по правилам `GITHUB.md`.
+
+Итог `v1.3.0`: добавлен модуль `ui/themes.py` с темами `system/light`, `dark` и `high-contrast`, выбор темы доступен из верхней панели и меню `Вид`, хранится через `QSettings` и не попадает в `.lgm.json`. Предпросмотр остается 2D-схемой без карты, но получает палитру текущей темы. Вкладка `Экспорт` стала гибче для текущего набора KML/ZIP/SVG/GeoJSON/CSV: убрана жесткая минимальная ширина содержимого, отключена горизонтальная прокрутка, длинные combo-box-ы больше не раздувают окно. Проверка: `uv lock --offline`, `uv run --offline --extra dev pytest` (`56 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск. Пользователь вручную протестировал версию и подтвердил, что внесенные изменения работают; `v1.3.0` переведена в стабильную.
+
+После визуальной проверки пользователя в `v1.3.0` дополнительно исправлена верхняя панель: кнопка `Применить пресет` больше не налезает на выпадающий список пресетов, а пункты меню `Проект` получили дополнительный правый отступ, чтобы горячие клавиши не накладывались на текст действий.
 
 ## Context and Orientation
 

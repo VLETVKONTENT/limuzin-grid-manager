@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, Qt, QThread, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -76,12 +76,19 @@ from limuzin_grid_manager.core.models import (
 )
 from limuzin_grid_manager.core.stats import calculate_grid_stats, estimate_export_placemarks, estimate_export_size_bytes
 from limuzin_grid_manager.ui.preview import GridPreviewWidget
+from limuzin_grid_manager.ui.themes import (
+    DEFAULT_THEME_ID,
+    apply_app_theme,
+    available_themes,
+    normalize_theme_id,
+)
 
 
 MAX_BIG_TILE_DIALOG_ROWS = 5_000
 SETTINGS_ORGANIZATION = "limuzin"
 SETTINGS_APPLICATION = "LIMUZIN GRID MANAGER"
 LAST_PROJECT_PATH_KEY = "project/last_path"
+THEME_SETTINGS_KEY = "ui/theme"
 
 
 class ExportWorker(QObject):
@@ -503,6 +510,7 @@ class MainWindow(QMainWindow):
         self._latest_options: GridOptions | None = None
         self._current_project_path: Path | None = None
         self._settings = settings or QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+        self._theme_id = normalize_theme_id(self._settings.value(THEME_SETTINGS_KEY, DEFAULT_THEME_ID, str))
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
         self._last_export_format_id = export_format_for_mode(ExportMode.KML).format_id
@@ -510,7 +518,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_ui()
         self._connect_signals()
-        self._apply_style()
+        self.apply_theme(self._theme_id)
         if restore_last_project:
             self._restore_last_project()
         self._schedule_stats_update()
@@ -540,6 +548,21 @@ class MainWindow(QMainWindow):
             action.setData(preset.id)
             preset_menu.addAction(action)
             self.preset_actions[preset.id] = action
+
+        view_menu = self.menuBar().addMenu("Вид")
+        theme_menu = view_menu.addMenu("Тема")
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+        self.theme_actions: dict[str, QAction] = {}
+        for theme in available_themes():
+            action = QAction(theme.title, self)
+            action.setCheckable(True)
+            action.setData(theme.theme_id)
+            action.setToolTip(theme.description)
+            action.setChecked(theme.theme_id == self._theme_id)
+            self.theme_action_group.addAction(action)
+            theme_menu.addAction(action)
+            self.theme_actions[theme.theme_id] = action
 
     def _build_ui(self) -> None:
         root = QWidget(self)
@@ -627,34 +650,55 @@ class MainWindow(QMainWindow):
         footer.addWidget(self.generate_button)
         footer.addWidget(self.open_folder_button)
 
-    def _build_project_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
+    def _build_project_bar(self) -> QVBoxLayout:
+        layout = QVBoxLayout()
         layout.setSpacing(8)
+        project_row = QHBoxLayout()
+        project_row.setSpacing(8)
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
 
         self.new_project_button = QPushButton("Новый")
         self.open_project_button = QPushButton("Открыть")
         self.save_project_button = QPushButton("Сохранить")
         self.save_project_as_button = QPushButton("Сохранить как")
 
-        layout.addWidget(self.new_project_button)
-        layout.addWidget(self.open_project_button)
-        layout.addWidget(self.save_project_button)
-        layout.addWidget(self.save_project_as_button)
+        project_row.addWidget(self.new_project_button)
+        project_row.addWidget(self.open_project_button)
+        project_row.addWidget(self.save_project_button)
+        project_row.addWidget(self.save_project_as_button)
 
         self.project_status = QLabel("Новый проект")
         self.project_status.setObjectName("Hint")
         self.project_status.setWordWrap(True)
-        layout.addWidget(self.project_status, 1)
+        project_row.addWidget(self.project_status, 1)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.setMinimumWidth(160)
+        self.theme_combo.setMaximumWidth(220)
+        self.theme_combo.setToolTip("Тема интерфейса хранится локально и не попадает в файл проекта.")
+        for theme in available_themes():
+            self.theme_combo.addItem(theme.title, theme.theme_id)
+        _select_combo_data(self.theme_combo, self._theme_id)
 
         self.preset_combo = QComboBox()
-        self.preset_combo.setMinimumWidth(300)
+        self.preset_combo.setMinimumWidth(280)
+        self.preset_combo.setMinimumContentsLength(24)
+        self.preset_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.preset_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         for preset in available_project_presets():
             self.preset_combo.addItem(preset.title, preset.id)
         self.preset_combo.setToolTip("Пресеты меняют настройки сетки или KML-стиля, но не трогают координаты.")
 
         self.apply_preset_button = QPushButton("Применить пресет")
-        layout.addWidget(self.preset_combo)
-        layout.addWidget(self.apply_preset_button)
+        self.apply_preset_button.setMinimumWidth(150)
+        preset_row.addWidget(self._field_label("Тема"))
+        preset_row.addWidget(self.theme_combo)
+        preset_row.addWidget(self.preset_combo, 1)
+        preset_row.addWidget(self.apply_preset_button)
+
+        layout.addLayout(project_row)
+        layout.addLayout(preset_row)
         return layout
 
     def _build_preview_tab(self) -> QWidget:
@@ -718,12 +762,12 @@ class MainWindow(QMainWindow):
         self.export_scroll_area = QScrollArea()
         self.export_scroll_area.setWidgetResizable(True)
         self.export_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.export_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.export_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.export_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         tab_layout.addWidget(self.export_scroll_area, 1)
 
         export_content = QWidget()
-        export_content.setMinimumWidth(560)
+        export_content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         self.export_scroll_area.setWidget(export_content)
 
         layout = QVBoxLayout(export_content)
@@ -776,10 +820,10 @@ class MainWindow(QMainWindow):
         summary_layout.addWidget(self.export_summary, 1)
         layout.addWidget(summary_group, 1)
 
-        future_group = QGroupBox("Будущие форматы")
+        future_group = QGroupBox("Дальше по roadmap")
         future_layout = QVBoxLayout(future_group)
         future_note = QLabel(
-            "Следующие этапы roadmap: многозонный экспорт, темы интерфейса и полировка пресетов."
+            "Следующие этапы roadmap: фундамент многозонности, многозонный экспорт и полировка пресетов."
         )
         future_note.setObjectName("Hint")
         future_note.setWordWrap(True)
@@ -787,6 +831,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(future_group)
 
         actions = QHBoxLayout()
+        actions.setSpacing(8)
         actions.addStretch(1)
         self.export_generate_button = QPushButton("Сгенерировать выбранный экспорт")
         self.export_cancel_button = QPushButton("Отменить экспорт")
@@ -950,7 +995,7 @@ class MainWindow(QMainWindow):
         combo.setMinimumWidth(300)
         combo.setMinimumHeight(34)
         combo.setMinimumContentsLength(24)
-        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return combo
 
@@ -979,6 +1024,7 @@ class MainWindow(QMainWindow):
         self.export_format.currentIndexChanged.connect(self._on_export_format_changed)
         self.export_folder.textChanged.connect(self._update_export_summary_from_latest)
         self.export_filename.textChanged.connect(self._update_export_summary_from_latest)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
         self.export_folder_button.clicked.connect(self.choose_export_folder)
         self.export_file_button.clicked.connect(self.choose_export_file)
         self.generate_button.clicked.connect(self.generate)
@@ -1005,10 +1051,41 @@ class MainWindow(QMainWindow):
         self.apply_preset_button.clicked.connect(self.apply_selected_preset)
         for preset_id, action in self.preset_actions.items():
             action.triggered.connect(lambda _checked=False, preset_id=preset_id: self.apply_preset(preset_id))
+        for theme_id, action in self.theme_actions.items():
+            action.triggered.connect(lambda _checked=False, theme_id=theme_id: self.apply_theme(theme_id))
 
     def _schedule_stats_update(self) -> None:
         if hasattr(self, "_stats_timer"):
             self._stats_timer.start()
+
+    @Slot(int)
+    def _on_theme_combo_changed(self, _index: int | None = None) -> None:
+        self.apply_theme(str(self.theme_combo.currentData()))
+
+    def apply_theme(self, theme_id: str) -> None:
+        self._theme_id = normalize_theme_id(theme_id)
+        app = QApplication.instance()
+        if app is not None:
+            applied_theme = apply_app_theme(app, self._theme_id)
+            self._theme_id = applied_theme.theme_id
+
+        if hasattr(self, "preview_canvas"):
+            self.preview_canvas.set_theme(self._theme_id)
+
+        self._settings.setValue(THEME_SETTINGS_KEY, self._theme_id)
+        self._settings.sync()
+        self._sync_theme_controls()
+
+    def _sync_theme_controls(self) -> None:
+        if hasattr(self, "theme_combo"):
+            was_blocked = self.theme_combo.blockSignals(True)
+            try:
+                _select_combo_data(self.theme_combo, self._theme_id)
+            finally:
+                self.theme_combo.blockSignals(was_blocked)
+
+        for theme_id, action in getattr(self, "theme_actions", {}).items():
+            action.setChecked(theme_id == self._theme_id)
 
     @Slot()
     def new_project(self) -> None:
@@ -1661,68 +1738,6 @@ class MainWindow(QMainWindow):
             return
         self._save_current_project_reference()
         super().closeEvent(event)
-
-    def _apply_style(self) -> None:
-        app = QApplication.instance()
-        if app is None:
-            return
-        app.setStyleSheet(
-            """
-            QMainWindow, QWidget {
-                font-size: 10.5pt;
-            }
-            QLabel#Title {
-                font-size: 20pt;
-                font-weight: 700;
-            }
-            QLabel#Subtitle, QLabel#Hint, QLabel#Status {
-                color: #555;
-            }
-            QLabel#PanelTitle {
-                font-size: 13pt;
-                font-weight: 700;
-            }
-            QLabel#SectionTitle {
-                font-size: 11pt;
-                font-weight: 700;
-                margin-top: 8px;
-            }
-            QLabel#FieldLabel {
-                color: #333;
-                font-weight: 600;
-                margin-top: 2px;
-            }
-            QGroupBox {
-                font-weight: 600;
-                margin-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 4px;
-            }
-            QLineEdit, QTextEdit, QComboBox {
-                border: 1px solid #b8bec8;
-                border-radius: 6px;
-                padding: 6px;
-            }
-            QComboBox {
-                min-height: 30px;
-                padding: 5px 34px 5px 8px;
-            }
-            QComboBox::drop-down {
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 30px;
-                border-left: 1px solid #b8bec8;
-            }
-            QPushButton {
-                border-radius: 6px;
-                padding: 8px 14px;
-            }
-            """
-        )
-
 
 def _select_combo_data(combo: QComboBox, value: str) -> None:
     for index in range(combo.count()):

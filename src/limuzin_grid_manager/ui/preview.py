@@ -16,6 +16,7 @@ from limuzin_grid_manager.core.models import (
     SmallNumberingMode,
 )
 from limuzin_grid_manager.core.numbering import small_number
+from limuzin_grid_manager.ui.themes import DEFAULT_THEME_ID, PreviewPalette, preview_palette_for_theme
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ class GridPreviewWidget(QWidget):
         self._press_pos: QPointF | None = None
         self._press_pan = QPointF(0.0, 0.0)
         self._is_dragging = False
+        self._palette: PreviewPalette = preview_palette_for_theme(DEFAULT_THEME_ID)
 
     def set_preview(self, stats: GridStats, options: GridOptions) -> None:
         self._stats = stats
@@ -71,6 +73,10 @@ class GridPreviewWidget(QWidget):
         self._stats = None
         self._message = message
         self._set_selected_big_number(0)
+        self.update()
+
+    def set_theme(self, theme_id: str) -> None:
+        self._palette = preview_palette_for_theme(theme_id)
         self.update()
 
     def selected_big_number(self) -> int:
@@ -102,7 +108,7 @@ class GridPreviewWidget(QWidget):
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.fillRect(self.rect(), QColor("#f7f9fc"))
+        painter.fillRect(self.rect(), QColor(self._palette.canvas_background))
 
         shape = self._shape()
         if shape is None:
@@ -111,8 +117,8 @@ class GridPreviewWidget(QWidget):
 
         scale, offset = self._scale_and_offset(shape)
         area = self._world_rect(shape, scale, offset, 0, 0, shape.width_m, shape.height_m)
-        painter.fillRect(area, QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#7f8793"), 1))
+        painter.fillRect(area, QColor(self._palette.grid_background))
+        painter.setPen(QPen(QColor(self._palette.grid_border), 1))
         painter.drawRect(area)
 
         if shape.is_big_grid:
@@ -387,7 +393,7 @@ class GridPreviewWidget(QWidget):
         if cell_px < 30 or visible_count > self._MAX_LABELS:
             return
 
-        painter.setPen(QColor("#111820"))
+        painter.setPen(QColor(self._palette.big_label_text))
         painter.setFont(_label_font(painter, cell_px, 7, 12))
         names = dict(self._options.big_tile_names)
         for row in range(row_start, row_stop):
@@ -415,7 +421,7 @@ class GridPreviewWidget(QWidget):
         if _small_numbering_is_spiral(self._options) and shape.rows * shape.cols > self._MAX_SPIRAL_LABEL_CELLS:
             return
 
-        painter.setPen(QColor("#1d2733"))
+        painter.setPen(QColor(self._palette.small_label_text))
         painter.setFont(_label_font(painter, cell_px, 6, 10))
         for row in range(row_start, row_stop):
             for col in range(col_start, col_stop):
@@ -445,8 +451,8 @@ class GridPreviewWidget(QWidget):
 
         row, col = row_col
         rect = self._world_rect(shape, scale, offset, col * shape.step, row * shape.step, shape.step, shape.step)
-        painter.fillRect(rect, QColor(30, 136, 229, 28))
-        painter.setPen(QPen(QColor("#1565c0"), 3))
+        painter.fillRect(rect, QColor(*self._palette.selected_fill_rgba))
+        painter.setPen(QPen(QColor(self._palette.selected_border), 3))
         painter.drawRect(rect)
 
     def _draw_selected_small_grid(
@@ -498,7 +504,7 @@ class GridPreviewWidget(QWidget):
         if small_px < 18:
             return
 
-        painter.setPen(QColor("#182331"))
+        painter.setPen(QColor(self._palette.small_label_text))
         painter.setFont(_label_font(painter, small_px, 6, 9))
         for small_row in range(10):
             for small_col in range(10):
@@ -524,7 +530,7 @@ class GridPreviewWidget(QWidget):
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(number))
 
     def _draw_message(self, painter: QPainter, message: str) -> None:
-        painter.setPen(QColor("#4b5563"))
+        painter.setPen(QColor(self._palette.message_text))
         font = painter.font()
         font.setPointSize(10)
         painter.setFont(font)
@@ -537,7 +543,7 @@ class GridPreviewWidget(QWidget):
         text = "Колесо - масштаб, перетаскивание - сдвиг"
         if shape.is_big_grid:
             text += ", клик - выбрать 1000x1000"
-        painter.setPen(QColor("#667085"))
+        painter.setPen(QColor(self._palette.help_text))
         font = painter.font()
         font.setPointSize(8)
         painter.setFont(font)

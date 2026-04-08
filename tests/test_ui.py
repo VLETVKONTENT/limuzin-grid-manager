@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QApplication
 
-from limuzin_grid_manager.app.project import CoordinateState, ProjectState, save_project_state
+from limuzin_grid_manager.app.project import CoordinateState, ProjectState, project_state_to_dict, save_project_state
 from limuzin_grid_manager.core.models import GridOptions, SmallNumberingDirection, SmallNumberingMode
-from limuzin_grid_manager.ui.main_window import LAST_PROJECT_PATH_KEY
+from limuzin_grid_manager.ui.main_window import LAST_PROJECT_PATH_KEY, THEME_SETTINGS_KEY
 from limuzin_grid_manager.ui.main_window import MainWindow
+from limuzin_grid_manager.ui.themes import DARK_THEME_ID, HIGH_CONTRAST_THEME_ID, SYSTEM_LIGHT_THEME_ID
 
 
 def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
@@ -27,8 +29,10 @@ def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
         assert window.export_filename.text() == "aq_grid.kml"
         assert "Будет создан 1 общий KML-файл." in window.export_summary.toPlainText()
         assert window.export_format.count() >= 5
+        assert window.theme_combo.currentData() == SYSTEM_LIGHT_THEME_ID
         assert window.export_scroll_area.widgetResizable() is True
-        assert window.export_scroll_area.widget().minimumWidth() >= 560
+        assert window.export_scroll_area.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        assert window.export_scroll_area.widget().minimumWidth() == 0
         assert window.export_summary.minimumHeight() >= 180
         assert window.project_status.text() == "Новый проект"
         assert window.preset_combo.count() >= 1
@@ -81,6 +85,42 @@ def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
 
         assert window.small_numbering_mode.currentData() == SmallNumberingMode.LINEAR.value
         assert window.small_numbering_direction.currentData() == SmallNumberingDirection.BY_COLUMNS.value
+    finally:
+        window.close()
+
+
+def test_theme_is_restored_from_settings_and_not_saved_to_project(tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+    _ = app
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    settings.setValue(THEME_SETTINGS_KEY, DARK_THEME_ID)
+    settings.sync()
+
+    window = MainWindow(settings=settings, restore_last_project=False)
+
+    try:
+        assert window.theme_combo.currentData() == DARK_THEME_ID
+        assert settings.value(THEME_SETTINGS_KEY, "", str) == DARK_THEME_ID
+
+        window.apply_theme(HIGH_CONTRAST_THEME_ID)
+
+        assert window.theme_combo.currentData() == HIGH_CONTRAST_THEME_ID
+        assert settings.value(THEME_SETTINGS_KEY, "", str) == HIGH_CONTRAST_THEME_ID
+        assert "font-size: 10.5pt" in app.styleSheet()
+
+        data = project_state_to_dict(window._current_project_state())
+        serialized = json.dumps(data, ensure_ascii=False)
+
+        assert THEME_SETTINGS_KEY not in serialized
+        assert HIGH_CONTRAST_THEME_ID not in serialized
+        assert "theme" not in serialized.lower()
+
+        saved_path = save_project_state(tmp_path / "theme-check", window._current_project_state())
+        saved_text = saved_path.read_text(encoding="utf-8")
+
+        assert THEME_SETTINGS_KEY not in saved_text
+        assert HIGH_CONTRAST_THEME_ID not in saved_text
+        assert "theme" not in saved_text.lower()
     finally:
         window.close()
 
