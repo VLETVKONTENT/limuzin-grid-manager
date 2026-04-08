@@ -9,6 +9,7 @@ import pytest
 from limuzin_grid_manager.app.exporter import export_grid
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
 from limuzin_grid_manager.core.kml import ExportCancelled
+from limuzin_grid_manager.core.svg import write_svg_all
 from limuzin_grid_manager.core.models import (
     BigTileFillMode,
     Bounds,
@@ -47,6 +48,74 @@ def test_write_kml_all_is_xml_without_colored_fill(tmp_path: Path) -> None:
     assert "<color>ff000000</color>" in text
     assert "7f00ff00" not in text
     assert "PolyStyle>\n<color>" not in text
+
+
+def test_write_svg_all_is_xml_with_layers_and_labels(tmp_path: Path) -> None:
+    out_path = tmp_path / "grid.svg"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.SVG,
+    )
+
+    write_svg_all(out_path, _bounds_2x2_big(), options)
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+
+    svg_ns = "{http://www.w3.org/2000/svg}"
+    rects = root.findall(f".//{svg_ns}rect")
+    labels = root.findall(f".//{svg_ns}text")
+
+    assert root.tag == f"{svg_ns}svg"
+    assert root.attrib["viewBox"] == "0 0 2000 2000"
+    assert root.attrib["data-zone"] == "6"
+    assert len(rects) == 404
+    assert len(labels) == 404
+    assert sum(1 for rect in rects if rect.attrib["data-layer"] == "1000x1000") == 4
+    assert sum(1 for rect in rects if rect.attrib["data-layer"] == "100x100") == 400
+    assert rects[0].attrib["data-big-number"] == "1"
+    assert labels[0].text == "001"
+
+
+def test_svg_style_uses_kml_style_colors_and_opacity(tmp_path: Path) -> None:
+    out_path = tmp_path / "styled.svg"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.SVG,
+        kml_style=KmlStyle(
+            big_line_color="#ff0000",
+            small_line_color="#00ff00",
+            big_line_width=5,
+            small_line_width=3,
+            big_fill_mode=BigTileFillMode.SINGLE,
+            big_fill_color="#3366cc",
+            big_fill_opacity=50,
+            small_fill_enabled=True,
+            small_fill_color="#112233",
+            small_fill_opacity=40,
+        ),
+    )
+
+    write_svg_all(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+    svg_ns = "{http://www.w3.org/2000/svg}"
+    rects = root.findall(f".//{svg_ns}rect")
+    big_rect = next(rect for rect in rects if rect.attrib["data-layer"] == "1000x1000")
+    small_rects = [rect for rect in rects if rect.attrib["data-layer"] == "100x100"]
+
+    assert big_rect.attrib["stroke"] == "#ff0000"
+    assert big_rect.attrib["stroke-width"] == "5"
+    assert big_rect.attrib["fill"] == "#3366cc"
+    assert big_rect.attrib["fill-opacity"] == "0.5"
+    assert len(small_rects) == 100
+    assert all(rect.attrib["stroke"] == "#00ff00" for rect in small_rects)
+    assert all(rect.attrib["stroke-width"] == "3" for rect in small_rects)
+    assert all(rect.attrib["fill"] == "#112233" for rect in small_rects)
+    assert all(rect.attrib["fill-opacity"] == "0.4" for rect in small_rects)
 
 
 def test_custom_line_style_is_written_to_big_and_small_tiles(tmp_path: Path) -> None:
@@ -234,6 +303,23 @@ def test_export_cancel_removes_temporary_file(tmp_path: Path) -> None:
         export_grid(out_path, _bounds_2x2_big(), options, progress=progress, cancelled=lambda: cancel_requested)
 
     assert not out_path.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_export_grid_writes_svg_through_temporary_file(tmp_path: Path) -> None:
+    out_path = tmp_path / "result.svg"
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.SVG,
+    )
+
+    export_grid(out_path, Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000), options)
+
+    assert out_path.exists()
+    assert ElementTree.fromstring(out_path.read_text(encoding="utf-8")).tag == "{http://www.w3.org/2000/svg}svg"
     assert not list(tmp_path.glob("*.tmp"))
 
 

@@ -11,6 +11,7 @@ WARN_ZIP_TILE_FILES = 2_000
 WARN_PREVIEW_CELLS = 80_000
 
 KML_BYTES_PER_PLACEMARK = 1200
+SVG_BYTES_PER_PLACEMARK = 850
 ZIP_BYTES_PER_PLACEMARK = 700
 ZIP_BYTES_PER_TILE = 2048
 EXPORT_SIZE_SAFETY_BYTES = 1_048_576
@@ -126,6 +127,8 @@ def estimate_export_size_bytes(stats: GridStats, options: GridOptions) -> int:
     if options.export_mode == ExportMode.ZIP:
         tile_count = stats.big_grid.total if stats.big_grid is not None else 0
         return EXPORT_SIZE_SAFETY_BYTES + placemark_count * ZIP_BYTES_PER_PLACEMARK + tile_count * ZIP_BYTES_PER_TILE
+    if options.export_mode == ExportMode.SVG:
+        return EXPORT_SIZE_SAFETY_BYTES + placemark_count * SVG_BYTES_PER_PLACEMARK
     return EXPORT_SIZE_SAFETY_BYTES + placemark_count * KML_BYTES_PER_PLACEMARK
 
 
@@ -155,12 +158,12 @@ def _add_large_grid_feedback(
     if placemark_count > MAX_EXPORT_PLACEMARKS:
         errors.append(
             "Экспорт слишком большой: получится примерно "
-            f"{_format_int(placemark_count)} объектов KML. Уменьшите область или разбейте ее на несколько экспортов."
+            f"{_format_int(placemark_count)} объектов экспорта. Уменьшите область или разбейте ее на несколько экспортов."
         )
     elif placemark_count > WARN_EXPORT_PLACEMARKS:
         warnings.append(
             "Большой экспорт: получится примерно "
-            f"{_format_int(placemark_count)} объектов KML. Генерация и открытие файла в AlpineQuest могут занять время."
+            f"{_format_int(placemark_count)} объектов экспорта. Генерация и открытие результата могут занять время."
         )
 
     if options.export_mode == ExportMode.ZIP and big_grid is not None and big_grid.total > WARN_ZIP_TILE_FILES:

@@ -23,6 +23,7 @@ dist/
 *.kml
 *.kmz
 *.zip
+*.svg
 *.lgm.json
 
 # OS/editor noise

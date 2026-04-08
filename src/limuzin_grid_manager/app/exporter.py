@@ -5,9 +5,11 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from limuzin_grid_manager.core.kml import ExportCancelled, write_kml_all, write_zip_per_big_tile
+from limuzin_grid_manager.core.export_progress import ExportCancelled
+from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, GridStats
 from limuzin_grid_manager.core.stats import ensure_exportable, estimate_export_size_bytes
+from limuzin_grid_manager.core.svg import write_svg_all
 
 
 def export_grid(
@@ -25,6 +27,8 @@ def export_grid(
     try:
         if options.export_mode == ExportMode.ZIP:
             write_zip_per_big_tile(temp_path, bounds, options, progress=progress, cancelled=cancelled)
+        elif options.export_mode == ExportMode.SVG:
+            write_svg_all(temp_path, bounds, options, progress=progress, cancelled=cancelled)
         else:
             write_kml_all(temp_path, bounds, options, progress=progress, cancelled=cancelled)
         if cancelled is not None and cancelled():

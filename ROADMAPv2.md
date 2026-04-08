@@ -19,6 +19,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-07 Europe/Moscow: Подтверждены решения пользователя: roadmap по версиям `v1.1.0` -> `v2.0.0`, автоматическое разбиение по зонам и набор новых экспортов `SVG + GeoJSON + CSV`.
 - [x] 2026-04-07 Europe/Moscow: Создан `ROADMAPv2.md` как самостоятельный ExecPlan-roadmap.
 - [x] 2026-04-07 Europe/Moscow: Проверен `ROADMAPv2.md` на наличие обязательных разделов, milestone-этапов и ключевых требований.
+- [x] 2026-04-08 Europe/Moscow: Начата реализация `v1.1.0`: прочитаны `PLANS.md`, этот roadmap, `GRIDBASE.md` и текущие модули экспорта, проекта, статистики и UI; подтверждено, что `rg` в этой среде по-прежнему недоступен из-за `Access denied`.
+- [x] 2026-04-08 Europe/Moscow: Реализован `v1.1.0`: реестр форматов с `format_id`, SVG writer, UI-подключение SVG, совместимость старых `.lgm.json`, тесты и документация.
+- [x] 2026-04-08 Europe/Moscow: Проверен `v1.1.0`: `uv lock --offline`, `uv run --offline --extra dev pytest` (`49 passed`), `uv run --offline --extra dev python -m compileall src tests`, офлайн-сборка EXE и smoke-запуск `dist/LIMUZIN_GRID_MANAGER.exe`.
 
 ## Surprises & Discoveries
 
@@ -30,6 +33,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: В интерфейсе уже есть явный задел под будущие форматы экспорта.
   Evidence: `src/limuzin_grid_manager/ui/main_window.py` создает `future_group = QGroupBox("Будущие форматы")` во вкладке `Экспорт`.
+
+- Observation: Офлайн-сборка PyInstaller для `v1.1.0` завершилась успешно, но сохранила предупреждение hook-pyproj о пути `C:\Users\user\Desktop\LIMUZIN GRID MANAGER\.venv\Library\share\proj`.
+  Evidence: `build_exe_windows.bat` вывел `WARNING: Datas for pyproj not found at: ...\.venv\Library\share\proj`, затем `Build complete!`, а smoke-запуск показал `ExitedWithin3Seconds : False`.
 
 ## Decision Log
 
@@ -53,11 +59,15 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Тема - предпочтение конкретного рабочего места и экрана, а не часть геометрии, экспорта или проектных данных.
   Date/Author: 2026-04-07, Codex.
 
+- Decision: Для `v1.1.0` новый `format_id` будет жить в прикладном реестре `app/export_formats.py` и сохраняться в `.lgm.json` как дополнительное поле рядом со старым `export_mode`, а `GridOptions.export_mode` останется совместимым внутренним режимом выполнения.
+  Rationale: Это дает стабильный идентификатор формата для UI и проекта, но не ломает существующий core-контракт и старые проекты с `export_mode: "kml"` или `export_mode: "zip"`. Будущие этапы смогут расширять реестр без срочной миграции всех core-моделей.
+  Date/Author: 2026-04-08, Codex.
+
 ## Outcomes & Retrospective
 
-Текущая задача выполнена: создан корневой `ROADMAPv2.md`, который можно дать будущей сессии Codex или человеку без истории этого разговора. Реализация кода `v2.0` еще не начата.
+Текущая задача roadmap-файла выполнена: создан корневой `ROADMAPv2.md`, который можно дать будущей сессии Codex или человеку без истории этого разговора. Реализация кода `v2.0` теперь начата: этап `v1.1.0` выполнен и принят пользователем как стабильная версия после ручного теста.
 
-По мере выполнения этапов `v1.1.0`...`v2.0.0` сюда нужно добавлять краткие итоги: что было сделано, какие решения изменились, какие риски остались и какие проверки реально прошли.
+Итог `v1.1.0`: добавлен реестр экспортных форматов со стабильным `format_id`, SVG writer без новых зависимостей, UI-выбор SVG, сохранение `export_format_id` в `.lgm.json` рядом со старым `export_mode`, тесты и документация версии. Многозонность, GeoJSON и CSV остаются для следующих milestone-этапов.
 
 ## Context and Orientation
 

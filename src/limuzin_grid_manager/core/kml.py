@@ -1,66 +1,34 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from limuzin_grid_manager.core.crs import ck42_to_wgs84, make_transformer_for_zone
-from limuzin_grid_manager.core.geometry import rect_corners_ck42, snake_index
+from limuzin_grid_manager.core.export_cells import (
+    big_tile_document_name,
+    big_tile_fill_color,
+    big_tile_folder_name,
+    big_tile_number,
+    big_tile_placemark_name,
+    iter_grid_cells,
+    iter_subcells,
+    small_number_for_cell,
+)
+from limuzin_grid_manager.core.export_progress import ExportCancelled, ProgressTracker
+from limuzin_grid_manager.core.geometry import rect_corners_ck42
 from limuzin_grid_manager.core.models import (
-    BigTileFillMode,
     Bounds,
     ExportMode,
     GridOptions,
     KmlStyle,
     normalize_rgb_color,
 )
-from limuzin_grid_manager.core.numbering import small_number
 from limuzin_grid_manager.core.stats import ensure_exportable, estimate_export_placemarks
 
 
-class ExportCancelled(RuntimeError):
-    pass
-
-
-class _ProgressTracker:
-    def __init__(
-        self,
-        progress: Callable[[int, int], None] | None,
-        total: int,
-        cancelled: Callable[[], bool] | None,
-    ) -> None:
-        self._progress = progress
-        self._cancelled = cancelled
-        self._total = max(1, int(total))
-        self._done = 0
-        self._emit_interval = max(1, self._total // 1000)
-        self._next_emit = 0
-        self.check_cancelled()
-        self._emit(force=True)
-
-    def step(self, amount: int = 1) -> None:
-        self.check_cancelled()
-        self._done = min(self._total, self._done + amount)
-        self._emit(force=False)
-        self.check_cancelled()
-
-    def finish(self) -> None:
-        self.check_cancelled()
-        self._done = self._total
-        self._emit(force=True)
-
-    def check_cancelled(self) -> None:
-        if self._cancelled is not None and self._cancelled():
-            raise ExportCancelled("Экспорт отменен пользователем.")
-
-    def _emit(self, force: bool) -> None:
-        if self._progress is None:
-            return
-        if not force and self._done < self._next_emit and self._done < self._total:
-            return
-        self._progress(self._done, self._total)
-        self._next_emit = self._done + self._emit_interval
+_ProgressTracker = ProgressTracker
 
 
 def write_kml_all(
@@ -85,11 +53,10 @@ def write_kml_all(
             assert stats.big_bounds is not None
             assert stats.big_grid is not None
             step_big = 1000
-            for row, col, x_top, y_left in _iter_grid_cells(stats.big_bounds, step_big):
-                idx0 = snake_index(row, col, stats.big_grid.cols) if options.snake_big else row * stats.big_grid.cols + col
-                big_num = idx0 + 1
-                big_folder_name = _big_tile_folder_name(big_num, big_tile_names)
-                big_placemark_name = _big_tile_placemark_name(big_num, big_tile_names)
+            for row, col, x_top, y_left in iter_grid_cells(stats.big_bounds, step_big):
+                big_num = big_tile_number(row, col, stats.big_grid.cols, options.snake_big)
+                big_folder_name = big_tile_folder_name(big_num, big_tile_names)
+                big_placemark_name = big_tile_placemark_name(big_num, big_tile_names)
                 fh.write("<Folder>\n")
                 fh.write(f"<name>{escape_xml(big_folder_name)}</name>\n")
                 fh.write("<open>0</open>\n")
@@ -107,10 +74,10 @@ def write_kml_all(
 
                 if options.include_100:
                     fh.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
-                    for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
+                    for small_row, small_col, small_x_top, small_y_left in iter_subcells(x_top, y_left):
                         _write_small_rectangle_placemark(
                             fh,
-                            str(_small_number_for_cell(small_row, small_col, 10, 10, options)),
+                            str(small_number_for_cell(small_row, small_col, 10, 10, options)),
                             small_x_top,
                             small_y_left,
                             100,
@@ -125,8 +92,8 @@ def write_kml_all(
             assert stats.small_bounds is not None
             assert stats.small_grid is not None
             fh.write("<Folder><name>Сетка 100x100</name><open>1</open>\n")
-            for row, col, x_top, y_left in _iter_grid_cells(stats.small_bounds, 100):
-                small_name = _small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
+            for row, col, x_top, y_left in iter_grid_cells(stats.small_bounds, 100):
+                small_name = small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
                 _write_small_rectangle_placemark(
                     fh,
                     str(small_name),
@@ -175,9 +142,8 @@ def write_zip_per_big_tile(
 
     out_zip_path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(out_zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
-        for row, col, x_top, y_left in _iter_grid_cells(stats.big_bounds, 1000):
-            idx0 = snake_index(row, col, stats.big_grid.cols) if options.snake_big else row * stats.big_grid.cols + col
-            big_num = idx0 + 1
+        for row, col, x_top, y_left in iter_grid_cells(stats.big_bounds, 1000):
+            big_num = big_tile_number(row, col, stats.big_grid.cols, options.snake_big)
             zip_file.writestr(
                 f"tile_{big_num:03d}.kml",
                 _tile_kml(big_num, x_top, y_left, options, transformer, big_tile_names, tracker),
@@ -289,7 +255,7 @@ def _write_big_rectangle_placemark(
         style.big_line_color,
         style.big_line_width,
         transformer,
-        fill_color=_big_tile_fill_color(big_num, style),
+        fill_color=big_tile_fill_color(big_num, style),
         fill_opacity=style.big_fill_opacity,
     )
 
@@ -334,16 +300,16 @@ def _tile_kml(
             lines.append(value)
 
     writer = ListWriter()
-    document_name = _big_tile_document_name(big_num, big_tile_names)
-    placemark_name = _big_tile_placemark_name(big_num, big_tile_names)
+    document_name = big_tile_document_name(big_num, big_tile_names)
+    placemark_name = big_tile_placemark_name(big_num, big_tile_names)
     kml_style = options.kml_style
     _write_document_start(writer, document_name)
     _write_big_rectangle_placemark(writer, placemark_name, big_num, x_top, y_left, 1000, transformer, kml_style)
     tracker.step()
     if options.include_100:
         writer.write("<Folder><name>Сетка 100x100</name><open>0</open>\n")
-        for small_row, small_col, small_x_top, small_y_left in _iter_subcells(x_top, y_left):
-            small_name = _small_number_for_cell(small_row, small_col, 10, 10, options)
+        for small_row, small_col, small_x_top, small_y_left in iter_subcells(x_top, y_left):
+            small_name = small_number_for_cell(small_row, small_col, 10, 10, options)
             _write_small_rectangle_placemark(
                 writer,
                 str(small_name),
@@ -357,60 +323,6 @@ def _tile_kml(
         writer.write("</Folder>\n")
     _write_document_end(writer)
     return "".join(lines)
-
-
-def _iter_grid_cells(bounds: Bounds, step: int) -> Iterator[tuple[int, int, int, int]]:
-    rows = bounds.height_m() // step
-    cols = bounds.width_m() // step
-    for row in range(rows):
-        x_top = bounds.x_top - row * step
-        for col in range(cols):
-            y_left = bounds.y_left + col * step
-            yield row, col, x_top, y_left
-
-
-def _iter_subcells(x_top: int, y_left: int) -> Iterator[tuple[int, int, int, int]]:
-    for row in range(10):
-        small_x_top = x_top - row * 100
-        for col in range(10):
-            small_y_left = y_left + col * 100
-            yield row, col, small_x_top, small_y_left
-
-
-def _big_tile_folder_name(big_num: int, big_tile_names: dict[int, str]) -> str:
-    return big_tile_names.get(big_num) or f"Квадрат {big_num:03d} (1000x1000)"
-
-
-def _big_tile_document_name(big_num: int, big_tile_names: dict[int, str]) -> str:
-    return big_tile_names.get(big_num) or f"Квадрат {big_num:03d}"
-
-
-def _big_tile_placemark_name(big_num: int, big_tile_names: dict[int, str]) -> str:
-    return big_tile_names.get(big_num) or f"{big_num:03d}"
-
-
-def _small_number_for_cell(row: int, col: int, rows: int, cols: int, options: GridOptions) -> int:
-    return small_number(
-        row,
-        col,
-        rows,
-        cols,
-        options.small_numbering_mode,
-        options.small_numbering_direction,
-        options.small_numbering_start_corner,
-        options.small_spiral_direction,
-    )
-
-
-def _big_tile_fill_color(big_num: int, style: KmlStyle) -> str | None:
-    if style.big_fill_mode == BigTileFillMode.NONE or style.big_fill_opacity <= 0:
-        return None
-    if style.big_fill_mode == BigTileFillMode.SINGLE:
-        return style.big_fill_color
-    if style.big_fill_mode == BigTileFillMode.BY_NUMBER:
-        return style.big_fill_palette[(big_num - 1) % len(style.big_fill_palette)]
-    custom_colors = dict(style.custom_big_fill_colors)
-    return custom_colors.get(big_num) or style.big_fill_color
 
 
 def _poly_style(fill_color: str | None, fill_opacity: int, outline: bool = True) -> str:

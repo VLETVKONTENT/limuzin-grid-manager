@@ -39,6 +39,7 @@ from limuzin_grid_manager.app.exporter import ExportCancelled, check_free_space_
 from limuzin_grid_manager.app.export_formats import (
     available_export_formats,
     default_export_directory,
+    export_format_by_id,
     export_format_for_mode,
     format_export_summary,
     normalize_export_filename,
@@ -504,7 +505,7 @@ class MainWindow(QMainWindow):
         self._settings = settings or QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
         self.big_tile_names: dict[int, str] = {}
         self.kml_style = KmlStyle()
-        self._last_export_mode = ExportMode.KML
+        self._last_export_format_id = export_format_for_mode(ExportMode.KML).format_id
 
         self._build_menus()
         self._build_ui()
@@ -733,7 +734,7 @@ class MainWindow(QMainWindow):
         format_layout = QVBoxLayout(format_group)
         self.export_format = self._wide_combo()
         for export_format in available_export_formats():
-            self.export_format.addItem(export_format.title, export_format.mode.value)
+            self.export_format.addItem(export_format.title, export_format.format_id)
         format_layout.addWidget(self._field_label("Вариант экспорта"))
         format_layout.addWidget(self.export_format)
 
@@ -778,8 +779,7 @@ class MainWindow(QMainWindow):
         future_group = QGroupBox("Будущие форматы")
         future_layout = QVBoxLayout(future_group)
         future_note = QLabel(
-            "Место для следующих вариантов: только 1000x1000, только 100x100, таблица номеров, "
-            "настройки проекта и пресеты экспорта."
+            "Следующие этапы roadmap: GeoJSON, CSV, многозонный экспорт и полировка пресетов."
         )
         future_note.setObjectName("Hint")
         future_note.setWordWrap(True)
@@ -921,7 +921,7 @@ class MainWindow(QMainWindow):
         return group
 
     def _build_kml_style_group(self) -> QGroupBox:
-        group = QGroupBox("Стиль KML")
+        group = QGroupBox("Стиль KML/SVG")
         layout = QVBoxLayout(group)
 
         self.kml_style_summary = QLabel(_format_kml_style_summary(self.kml_style))
@@ -929,7 +929,7 @@ class MainWindow(QMainWindow):
         self.kml_style_summary.setWordWrap(True)
         layout.addWidget(self.kml_style_summary)
 
-        self.kml_style_button = QPushButton("Настроить стиль KML")
+        self.kml_style_button = QPushButton("Настроить стиль KML/SVG")
         self.kml_style_button.setToolTip("Цвета линий, толщина и заливка 1000x1000 и 100x100.")
         layout.addWidget(self.kml_style_button)
 
@@ -1140,7 +1140,7 @@ class MainWindow(QMainWindow):
             _select_combo_data(self.small_numbering_direction, options.small_numbering_direction.value)
             _select_combo_data(self.small_spiral_direction, options.small_spiral_direction.value)
             _select_combo_data(self.small_numbering_start, options.small_numbering_start_corner.value)
-            _select_combo_data(self.export_format, options.export_mode.value)
+            _select_combo_data(self.export_format, export_format_for_mode(options.export_mode).format_id)
 
         self._with_blocked_signals(
             (
@@ -1159,7 +1159,7 @@ class MainWindow(QMainWindow):
 
         self.big_tile_names = dict(options.big_tile_names)
         self.kml_style = options.kml_style.normalized()
-        self._last_export_mode = options.export_mode
+        self._last_export_format_id = export_format_for_mode(options.export_mode).format_id
         self._sync_numbering_controls()
         self._update_export_format_description()
         self._update_kml_style_summary()
@@ -1257,9 +1257,9 @@ class MainWindow(QMainWindow):
             self.small_numbering_start.setToolTip("Из какого угла начинается нумерация малых квадратов.")
 
     def _sync_export_filename_suffix(self) -> None:
-        export_mode = ExportMode(self.export_format.currentData())
-        export_format = export_format_for_mode(export_mode)
-        previous_format = export_format_for_mode(self._last_export_mode)
+        export_format_id = str(self.export_format.currentData())
+        export_format = export_format_by_id(export_format_id)
+        previous_format = export_format_by_id(self._last_export_format_id)
         current_filename = self.export_filename.text().strip().strip('"')
         if not current_filename or current_filename == previous_format.default_filename:
             next_filename = export_format.default_filename
@@ -1271,11 +1271,11 @@ class MainWindow(QMainWindow):
             self.export_filename.setText(next_filename)
             self.export_filename.blockSignals(False)
 
-        self._last_export_mode = export_mode
+        self._last_export_format_id = export_format_id
         self._update_export_summary_from_latest()
 
     def _update_export_format_description(self) -> None:
-        export_format = export_format_for_mode(ExportMode(self.export_format.currentData()))
+        export_format = export_format_by_id(str(self.export_format.currentData()))
         self.export_format_description.setText(export_format.description)
 
     def _update_export_summary(self, stats: GridStats | None, options: GridOptions) -> None:
@@ -1313,7 +1313,7 @@ class MainWindow(QMainWindow):
         )
 
     def _current_options(self) -> GridOptions:
-        export_mode = ExportMode(self.export_format.currentData())
+        export_format = export_format_by_id(str(self.export_format.currentData()))
         return GridOptions(
             include_1000=self.include_1000.isChecked(),
             include_100=self.include_100.isChecked(),
@@ -1324,7 +1324,7 @@ class MainWindow(QMainWindow):
             small_numbering_start_corner=StartCorner(self.small_numbering_start.currentData()),
             small_spiral_direction=SpiralDirection(self.small_spiral_direction.currentData()),
             rounding_mode=RoundingMode(self.rounding_mode.currentData()),
-            export_mode=export_mode,
+            export_mode=export_format.mode,
             kml_style=self.kml_style,
         )
 
@@ -1824,7 +1824,8 @@ def _format_stats(stats: GridStats, options: GridOptions) -> str:
 
     placemark_count = estimate_export_placemarks(stats, options)
     if placemark_count > 0:
-        lines.append(f"Объектов KML к записи: {placemark_count:,}.".replace(",", " "))
+        export_format = export_format_for_mode(options.export_mode)
+        lines.append(f"Объектов {export_format.object_label} к записи: {placemark_count:,}.".replace(",", " "))
         lines.append(f"Оценка размера результата: около {_format_bytes(estimate_export_size_bytes(stats, options))}.")
 
     lines.append("")

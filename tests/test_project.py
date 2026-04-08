@@ -75,6 +75,46 @@ def test_project_state_roundtrip_preserves_settings(tmp_path) -> None:
     assert loaded.options.kml_style.small_fill_enabled is True
 
 
+def test_project_state_saves_export_format_id_for_svg(tmp_path) -> None:
+    state = ProjectState(
+        coordinates=CoordinateState(),
+        options=GridOptions(export_mode=ExportMode.SVG),
+        export_folder=str(tmp_path),
+        export_filename="grid.svg",
+    )
+
+    saved_path = save_project_state(tmp_path / "svg-project", state)
+    data = json.loads(saved_path.read_text(encoding="utf-8"))
+    loaded = load_project_state(saved_path)
+
+    assert data["options"]["export_format_id"] == "svg_schema"
+    assert data["options"]["export_mode"] == "svg"
+    assert loaded.options.export_mode == ExportMode.SVG
+
+
+def test_project_loader_accepts_legacy_export_mode_without_format_id(tmp_path) -> None:
+    path = tmp_path / "legacy-export.lgm.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "limuzin-grid-manager-project",
+                "schema_version": 1,
+                "coordinates": {},
+                "options": {
+                    "export_mode": "zip",
+                },
+                "export": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_project_state(path)
+
+    assert loaded.options.export_mode == ExportMode.ZIP
+
+
 def test_project_path_normalization_prefers_lgm_json(tmp_path) -> None:
     assert normalize_project_path(tmp_path / "grid").name == "grid.lgm.json"
     assert normalize_project_path(tmp_path / "grid.json").name == "grid.lgm.json"

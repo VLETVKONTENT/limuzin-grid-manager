@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from limuzin_grid_manager import __version__
-from limuzin_grid_manager.app.export_formats import default_export_directory, export_format_for_mode
+from limuzin_grid_manager.app.export_formats import default_export_directory, export_format_by_id, export_format_for_mode
 from limuzin_grid_manager.core.models import (
     BigTileFillMode,
     ExportMode,
@@ -297,6 +297,7 @@ def grid_options_to_dict(options: GridOptions) -> dict[str, Any]:
         "small_numbering_start_corner": options.small_numbering_start_corner.value,
         "small_spiral_direction": options.small_spiral_direction.value,
         "rounding_mode": options.rounding_mode.value,
+        "export_format_id": export_format_for_mode(options.export_mode).format_id,
         "export_mode": options.export_mode.value,
         "kml_style": kml_style_to_dict(options.kml_style.normalized()),
     }
@@ -316,7 +317,7 @@ def grid_options_from_dict(data: object) -> GridOptions:
         small_numbering_start_corner=StartCorner(source.get("small_numbering_start_corner", StartCorner.NW.value)),
         small_spiral_direction=SpiralDirection(source.get("small_spiral_direction", SpiralDirection.CLOCKWISE.value)),
         rounding_mode=RoundingMode(source.get("rounding_mode", RoundingMode.IN.value)),
-        export_mode=ExportMode(source.get("export_mode", ExportMode.KML.value)),
+        export_mode=_export_mode_from_project_options(source),
         kml_style=kml_style_from_dict(source.get("kml_style", {})),
     ).normalized()
 
@@ -364,6 +365,13 @@ def _bool_from_data(source: Mapping[str, Any], key: str, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     raise ValueError(f"{key}: ожидалось true/false.")
+
+
+def _export_mode_from_project_options(source: Mapping[str, Any]) -> ExportMode:
+    format_id = source.get("export_format_id")
+    if format_id is not None:
+        return export_format_by_id(str(format_id)).mode
+    return ExportMode(source.get("export_mode", ExportMode.KML.value))
 
 
 def _named_pairs_from_data(data: object, value_key: str) -> tuple[tuple[int, str], ...]:

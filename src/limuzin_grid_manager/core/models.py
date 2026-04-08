@@ -26,6 +26,7 @@ class RoundingMode(StrEnum):
 class ExportMode(StrEnum):
     KML = "kml"
     ZIP = "zip"
+    SVG = "svg"
 
 
 class SmallNumberingMode(StrEnum):

@@ -9,7 +9,7 @@ from limuzin_grid_manager.core.stats import estimate_export_placemarks, estimate
 
 @dataclass(frozen=True)
 class ExportFormat:
-    id: str
+    format_id: str
     title: str
     description: str
     mode: ExportMode
@@ -17,12 +17,17 @@ class ExportFormat:
     default_filename: str
     dialog_title: str
     dialog_filter: str
+    object_label: str
     requires_1000: bool = False
+
+    @property
+    def id(self) -> str:
+        return self.format_id
 
 
 EXPORT_FORMATS: tuple[ExportFormat, ...] = (
     ExportFormat(
-        id="kml_all",
+        format_id="kml_all",
         title="KML — один общий файл",
         description="Один файл .kml со всей выбранной сеткой.",
         mode=ExportMode.KML,
@@ -30,9 +35,10 @@ EXPORT_FORMATS: tuple[ExportFormat, ...] = (
         default_filename="aq_grid.kml",
         dialog_title="Сохранить KML",
         dialog_filter="KML file (*.kml)",
+        object_label="KML",
     ),
     ExportFormat(
-        id="zip_big_tiles",
+        format_id="zip_big_tiles",
         title="ZIP — KML по квадратам 1000x1000",
         description="Один .zip, внутри отдельные tile_###.kml для каждого большого квадрата.",
         mode=ExportMode.ZIP,
@@ -40,7 +46,19 @@ EXPORT_FORMATS: tuple[ExportFormat, ...] = (
         default_filename="aq_grid_tiles.zip",
         dialog_title="Сохранить ZIP",
         dialog_filter="ZIP archive (*.zip)",
+        object_label="KML",
         requires_1000=True,
+    ),
+    ExportFormat(
+        format_id="svg_schema",
+        title="SVG — векторная схема",
+        description="Один .svg с метрической схемой сетки, слоями, подписями и стилями.",
+        mode=ExportMode.SVG,
+        extension=".svg",
+        default_filename="aq_grid.svg",
+        dialog_title="Сохранить SVG",
+        dialog_filter="SVG file (*.svg)",
+        object_label="SVG",
     ),
 )
 
@@ -61,9 +79,17 @@ def export_format_for_mode(mode: ExportMode | str) -> ExportFormat:
 
 def export_format_by_id(format_id: str) -> ExportFormat:
     for export_format in EXPORT_FORMATS:
-        if export_format.id == format_id:
+        if export_format.format_id == format_id:
             return export_format
     raise ValueError(f"Неизвестный формат экспорта: {format_id!r}.")
+
+
+def export_format_for_id_or_mode(value: ExportMode | str) -> ExportFormat:
+    text = str(value)
+    for export_format in EXPORT_FORMATS:
+        if export_format.format_id == text:
+            return export_format
+    return export_format_for_mode(text)
 
 
 def default_export_directory() -> Path:
@@ -116,7 +142,7 @@ def format_export_summary(stats: GridStats | None, options: GridOptions, out_pat
 
     placemark_count = estimate_export_placemarks(stats, options)
     if placemark_count > 0:
-        lines.append(f"Объектов KML к записи: {placemark_count:,}.".replace(",", " "))
+        lines.append(f"Объектов {export_format.object_label} к записи: {placemark_count:,}.".replace(",", " "))
         lines.append(f"Оценка размера результата: около {_format_bytes(estimate_export_size_bytes(stats, options))}.")
         lines.append("")
 
@@ -128,6 +154,16 @@ def format_export_summary(stats: GridStats | None, options: GridOptions, out_pat
             lines.append("Каждый tile_###.kml содержит большой квадрат и его сетку 100x100.")
         else:
             lines.append("Каждый tile_###.kml содержит только большой квадрат 1000x1000.")
+    elif export_mode == ExportMode.SVG:
+        lines.append("Будет создан 1 SVG-файл.")
+        if stats.big_grid is not None:
+            lines.append(f"Слой 1000x1000: {stats.big_grid.total} {_plural_rectangles(stats.big_grid.total)}.")
+            if options.include_100:
+                small_count = stats.big_grid.total * 100
+                lines.append(f"Слой 100x100 внутри больших: {small_count} {_plural_rectangles(small_count)}.")
+        elif stats.small_grid is not None:
+            lines.append(f"Слой 100x100: {stats.small_grid.total} {_plural_rectangles(stats.small_grid.total)}.")
+        lines.append("Координаты SVG сохраняются в метрах с началом viewBox в верхнем левом углу области.")
     else:
         lines.append("Будет создан 1 общий KML-файл.")
         if stats.big_grid is not None:
@@ -151,6 +187,14 @@ def _plural_files(count: int) -> str:
     if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
         return "файла"
     return "файлов"
+
+
+def _plural_rectangles(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return "прямоугольник"
+    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        return "прямоугольника"
+    return "прямоугольников"
 
 
 def _format_bytes(value: int) -> str:
