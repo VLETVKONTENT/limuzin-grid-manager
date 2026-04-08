@@ -22,6 +22,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-08 Europe/Moscow: Начата реализация `v1.1.0`: прочитаны `PLANS.md`, этот roadmap, `GRIDBASE.md` и текущие модули экспорта, проекта, статистики и UI; подтверждено, что `rg` в этой среде по-прежнему недоступен из-за `Access denied`.
 - [x] 2026-04-08 Europe/Moscow: Реализован `v1.1.0`: реестр форматов с `format_id`, SVG writer, UI-подключение SVG, совместимость старых `.lgm.json`, тесты и документация.
 - [x] 2026-04-08 Europe/Moscow: Проверен `v1.1.0`: `uv lock --offline`, `uv run --offline --extra dev pytest` (`49 passed`), `uv run --offline --extra dev python -m compileall src tests`, офлайн-сборка EXE и smoke-запуск `dist/LIMUZIN_GRID_MANAGER.exe`.
+- [x] 2026-04-08 09:57 Europe/Moscow: Начата реализация `v1.2.0`: перечитаны `PLANS.md`, секция `v1.2.0` этого roadmap, `GRIDBASE.md`, текущие модули экспорта, проекта, статистики, UI и тесты; подтвержден объем GeoJSON/CSV без DXF и без многозонности.
+- [x] 2026-04-08 10:05 Europe/Moscow: Реализовано ядро `v1.2.0`: добавлены `core/geojson.py`, `core/csv_export.py`, новые `ExportMode`, записи в реестре форматов, маршрутизация через `export_grid()`, оценки размера, UI-сводки, проектная совместимость и автотесты.
+- [x] 2026-04-08 10:18 Europe/Moscow: Завершен `v1.2.0`: обновлены версия, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `versions/GRIDVERSIONS.md`, `versions/v1.2.0.md`, `.gitignore`; выполнены `uv lock --offline`, offline `pytest` (`55 passed`), offline `compileall`, сборка EXE и smoke-запуск.
+- [x] 2026-04-08 Europe/Moscow: Пользователь вручную протестировал `v1.2.0` и подтвердил, что внесенные изменения работают; версия переведена из рабочей в стабильную перед публикацией.
 
 ## Surprises & Discoveries
 
@@ -36,6 +40,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: Офлайн-сборка PyInstaller для `v1.1.0` завершилась успешно, но сохранила предупреждение hook-pyproj о пути `C:\Users\user\Desktop\LIMUZIN GRID MANAGER\.venv\Library\share\proj`.
   Evidence: `build_exe_windows.bat` вывел `WARNING: Datas for pyproj not found at: ...\.venv\Library\share\proj`, затем `Build complete!`, а smoke-запуск показал `ExitedWithin3Seconds : False`.
+
+- Observation: То же предупреждение hook-pyproj сохранилось при offline-сборке `v1.2.0`, но не помешало созданию EXE и smoke-запуску.
+  Evidence: `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` завершился с `Build complete!`; `dist/LIMUZIN_GRID_MANAGER.exe` имеет `FileVersion` и `ProductVersion` `1.2.0.0`, smoke-запуск показал `ExitedWithin3Seconds : False`.
 
 ## Decision Log
 
@@ -63,11 +70,23 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Это дает стабильный идентификатор формата для UI и проекта, но не ломает существующий core-контракт и старые проекты с `export_mode: "kml"` или `export_mode: "zip"`. Будущие этапы смогут расширять реестр без срочной миграции всех core-моделей.
   Date/Author: 2026-04-08, Codex.
 
+- Decision: Для `v1.2.0` GeoJSON и CSV будут отдельными `ExportMode` и отдельными core-writer-модулями, а не режимами внутри KML/SVG writer-ов.
+  Rationale: Такой путь сохраняет существующий реестр форматов, не разращивает `MainWindow`, позволяет `.lgm.json` хранить стабильный `export_format_id` для каждого результата и оставляет будущую многозонность отдельным этапом `v1.5.0`.
+  Date/Author: 2026-04-08, Codex.
+
+- Decision: GeoJSON и CSV будут писаться потоково через стандартные модули `json` и `csv`, без новых зависимостей.
+  Rationale: GeoJSON `FeatureCollection` можно безопасно сформировать как последовательность features с запятыми между ними, не накапливая крупный список в памяти; CSV естественно пишется построчно и должен получить UTF-8 with BOM для Excel в русской локали.
+  Date/Author: 2026-04-08, Codex.
+
 ## Outcomes & Retrospective
 
 Текущая задача roadmap-файла выполнена: создан корневой `ROADMAPv2.md`, который можно дать будущей сессии Codex или человеку без истории этого разговора. Реализация кода `v2.0` теперь начата: этап `v1.1.0` выполнен и принят пользователем как стабильная версия после ручного теста.
 
 Итог `v1.1.0`: добавлен реестр экспортных форматов со стабильным `format_id`, SVG writer без новых зависимостей, UI-выбор SVG, сохранение `export_format_id` в `.lgm.json` рядом со старым `export_mode`, тесты и документация версии. Многозонность, GeoJSON и CSV остаются для следующих milestone-этапов.
+
+Итог `v1.2.0`: добавлены GeoJSON и CSV как отдельные режимы экспорта и отдельные core writer-ы без новых зависимостей. GeoJSON пишет `FeatureCollection` с `Polygon` в WGS84 и свойствами ячеек, CSV пишет UTF-8 with BOM и разделитель `;` с границами СК-42 и центрами WGS84. UI, проектный `export_format_id`, сводки, `.gitignore`, документация версии и EXE-ресурсы обновлены. Проверка: `uv lock --offline`, `uv run --offline --extra dev pytest` (`55 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск. Многозонность остается для следующих milestone-этапов.
+
+После ручного теста пользователь подтвердил, что изменения `v1.2.0` работают. Статус версии изменен на стабильный, и версия готова к commit, tag, push и GitHub Release по правилам `GITHUB.md`.
 
 ## Context and Orientation
 

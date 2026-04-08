@@ -60,6 +60,28 @@ EXPORT_FORMATS: tuple[ExportFormat, ...] = (
         dialog_filter="SVG file (*.svg)",
         object_label="SVG",
     ),
+    ExportFormat(
+        format_id="geojson_gis",
+        title="GeoJSON — GIS-полигоны",
+        description="Один .geojson FeatureCollection с полигонами WGS84 и свойствами ячеек.",
+        mode=ExportMode.GEOJSON,
+        extension=".geojson",
+        default_filename="aq_grid.geojson",
+        dialog_title="Сохранить GeoJSON",
+        dialog_filter="GeoJSON file (*.geojson)",
+        object_label="GeoJSON",
+    ),
+    ExportFormat(
+        format_id="csv_table",
+        title="CSV — таблица проверки",
+        description="Один .csv в UTF-8 with BOM с разделителем ; для Excel и табличной проверки.",
+        mode=ExportMode.CSV,
+        extension=".csv",
+        default_filename="aq_grid.csv",
+        dialog_title="Сохранить CSV",
+        dialog_filter="CSV file (*.csv)",
+        object_label="CSV",
+    ),
 )
 
 KNOWN_EXPORT_SUFFIXES = frozenset(export_format.extension for export_format in EXPORT_FORMATS)
@@ -164,6 +186,24 @@ def format_export_summary(stats: GridStats | None, options: GridOptions, out_pat
         elif stats.small_grid is not None:
             lines.append(f"Слой 100x100: {stats.small_grid.total} {_plural_rectangles(stats.small_grid.total)}.")
         lines.append("Координаты SVG сохраняются в метрах с началом viewBox в верхнем левом углу области.")
+    elif export_mode == ExportMode.GEOJSON:
+        lines.append("Будет создан 1 GeoJSON-файл FeatureCollection.")
+        if stats.big_grid is not None:
+            lines.append(f"Features 1000x1000: {stats.big_grid.total}.")
+            if options.include_100:
+                lines.append(f"Features 100x100 внутри больших: {stats.big_grid.total * 100}.")
+        elif stats.small_grid is not None:
+            lines.append(f"Features 100x100: {stats.small_grid.total}.")
+        lines.append("Геометрия: Polygon в WGS84 lon/lat; свойства включают layer, zone и номера ячеек.")
+    elif export_mode == ExportMode.CSV:
+        lines.append("Будет создан 1 CSV-файл в UTF-8 with BOM с разделителем ;.")
+        if stats.big_grid is not None:
+            lines.append(f"Строки 1000x1000: {stats.big_grid.total}.")
+            if options.include_100:
+                lines.append(f"Строки 100x100 внутри больших: {stats.big_grid.total * 100}.")
+        elif stats.small_grid is not None:
+            lines.append(f"Строки 100x100: {stats.small_grid.total}.")
+        lines.append("Столбцы содержат слой, зону, номера, границы СК-42 и центр WGS84.")
     else:
         lines.append("Будет создан 1 общий KML-файл.")
         if stats.big_grid is not None:

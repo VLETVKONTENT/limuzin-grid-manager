@@ -92,6 +92,27 @@ def test_project_state_saves_export_format_id_for_svg(tmp_path) -> None:
     assert loaded.options.export_mode == ExportMode.SVG
 
 
+def test_project_state_saves_export_format_id_for_geojson_and_csv(tmp_path) -> None:
+    for export_mode, expected_format_id, filename in (
+        (ExportMode.GEOJSON, "geojson_gis", "grid.geojson"),
+        (ExportMode.CSV, "csv_table", "grid.csv"),
+    ):
+        state = ProjectState(
+            coordinates=CoordinateState(),
+            options=GridOptions(export_mode=export_mode),
+            export_folder=str(tmp_path),
+            export_filename=filename,
+        )
+
+        saved_path = save_project_state(tmp_path / f"{expected_format_id}-project", state)
+        data = json.loads(saved_path.read_text(encoding="utf-8"))
+        loaded = load_project_state(saved_path)
+
+        assert data["options"]["export_format_id"] == expected_format_id
+        assert data["options"]["export_mode"] == export_mode.value
+        assert loaded.options.export_mode == export_mode
+
+
 def test_project_loader_accepts_legacy_export_mode_without_format_id(tmp_path) -> None:
     path = tmp_path / "legacy-export.lgm.json"
     path.write_text(

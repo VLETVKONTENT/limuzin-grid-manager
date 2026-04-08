@@ -24,6 +24,8 @@ dist/
 *.kmz
 *.zip
 *.svg
+*.geojson
+*.csv
 *.lgm.json
 
 # OS/editor noise

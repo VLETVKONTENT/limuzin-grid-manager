@@ -12,6 +12,8 @@ WARN_PREVIEW_CELLS = 80_000
 
 KML_BYTES_PER_PLACEMARK = 1200
 SVG_BYTES_PER_PLACEMARK = 850
+GEOJSON_BYTES_PER_PLACEMARK = 1450
+CSV_BYTES_PER_PLACEMARK = 260
 ZIP_BYTES_PER_PLACEMARK = 700
 ZIP_BYTES_PER_TILE = 2048
 EXPORT_SIZE_SAFETY_BYTES = 1_048_576
@@ -129,6 +131,10 @@ def estimate_export_size_bytes(stats: GridStats, options: GridOptions) -> int:
         return EXPORT_SIZE_SAFETY_BYTES + placemark_count * ZIP_BYTES_PER_PLACEMARK + tile_count * ZIP_BYTES_PER_TILE
     if options.export_mode == ExportMode.SVG:
         return EXPORT_SIZE_SAFETY_BYTES + placemark_count * SVG_BYTES_PER_PLACEMARK
+    if options.export_mode == ExportMode.GEOJSON:
+        return EXPORT_SIZE_SAFETY_BYTES + placemark_count * GEOJSON_BYTES_PER_PLACEMARK
+    if options.export_mode == ExportMode.CSV:
+        return EXPORT_SIZE_SAFETY_BYTES + placemark_count * CSV_BYTES_PER_PLACEMARK
     return EXPORT_SIZE_SAFETY_BYTES + placemark_count * KML_BYTES_PER_PLACEMARK
 
 

@@ -779,7 +779,7 @@ class MainWindow(QMainWindow):
         future_group = QGroupBox("Будущие форматы")
         future_layout = QVBoxLayout(future_group)
         future_note = QLabel(
-            "Следующие этапы roadmap: GeoJSON, CSV, многозонный экспорт и полировка пресетов."
+            "Следующие этапы roadmap: многозонный экспорт, темы интерфейса и полировка пресетов."
         )
         future_note.setObjectName("Hint")
         future_note.setWordWrap(True)

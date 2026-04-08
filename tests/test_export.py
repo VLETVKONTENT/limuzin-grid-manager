@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import csv
+import io
+import json
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -7,6 +10,8 @@ from xml.etree import ElementTree
 import pytest
 
 from limuzin_grid_manager.app.exporter import export_grid
+from limuzin_grid_manager.core.csv_export import CSV_HEADER, write_csv_all
+from limuzin_grid_manager.core.geojson import write_geojson_all
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
 from limuzin_grid_manager.core.kml import ExportCancelled
 from limuzin_grid_manager.core.svg import write_svg_all
@@ -76,6 +81,86 @@ def test_write_svg_all_is_xml_with_layers_and_labels(tmp_path: Path) -> None:
     assert sum(1 for rect in rects if rect.attrib["data-layer"] == "100x100") == 400
     assert rects[0].attrib["data-big-number"] == "1"
     assert labels[0].text == "001"
+
+
+def test_write_geojson_all_is_feature_collection_with_wgs84_properties(tmp_path: Path) -> None:
+    out_path = tmp_path / "grid.geojson"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        big_tile_names=((1, "Северный участок"),),
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.GEOJSON,
+    )
+
+    write_geojson_all(out_path, _bounds_2x2_big(), options)
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    features = data["features"]
+    first = features[0]
+    first_small = features[1]
+    ring = first["geometry"]["coordinates"][0]
+    lon, lat = ring[0]
+
+    assert data["type"] == "FeatureCollection"
+    assert len(features) == 404
+    assert first["geometry"]["type"] == "Polygon"
+    assert len(ring) == 5
+    assert ring[0] == ring[-1]
+    assert -180 <= lon <= 180
+    assert -90 <= lat <= 90
+    assert first["properties"] == {
+        "layer": "1000x1000",
+        "zone": 6,
+        "cell_size_m": 1000,
+        "big_number": 1,
+        "big_name": "Северный участок",
+        "small_number": None,
+        "x_top": 5_662_000,
+        "x_bottom": 5_661_000,
+        "y_left": 6_650_000,
+        "y_right": 6_651_000,
+    }
+    assert first_small["properties"]["layer"] == "100x100"
+    assert first_small["properties"]["big_number"] == 1
+    assert first_small["properties"]["big_name"] == "Северный участок"
+    assert first_small["properties"]["small_number"] == 1
+
+
+def test_write_csv_all_uses_bom_semicolon_and_cell_rows(tmp_path: Path) -> None:
+    out_path = tmp_path / "grid.csv"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=True,
+        big_tile_names=((1, "Северный участок"),),
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.CSV,
+    )
+
+    write_csv_all(out_path, _bounds_2x2_big(), options)
+    raw = out_path.read_bytes()
+    text = raw.decode("utf-8-sig")
+    rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
+
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert text.splitlines()[0] == ";".join(CSV_HEADER)
+    assert len(rows) == 404
+    assert rows[0]["layer"] == "1000x1000"
+    assert rows[0]["zone"] == "6"
+    assert rows[0]["big_number"] == "1"
+    assert rows[0]["big_name"] == "Северный участок"
+    assert rows[0]["small_number"] == ""
+    assert rows[0]["x_top"] == "5662000"
+    assert rows[0]["x_bottom"] == "5661000"
+    assert rows[0]["y_left"] == "6650000"
+    assert rows[0]["y_right"] == "6651000"
+    assert rows[0]["center_lon"]
+    assert rows[0]["center_lat"]
+    assert rows[1]["layer"] == "100x100"
+    assert rows[1]["big_number"] == "1"
+    assert rows[1]["big_name"] == "Северный участок"
+    assert rows[1]["small_number"] == "1"
 
 
 def test_svg_style_uses_kml_style_colors_and_opacity(tmp_path: Path) -> None:
@@ -320,6 +405,27 @@ def test_export_grid_writes_svg_through_temporary_file(tmp_path: Path) -> None:
 
     assert out_path.exists()
     assert ElementTree.fromstring(out_path.read_text(encoding="utf-8")).tag == "{http://www.w3.org/2000/svg}svg"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_export_grid_writes_geojson_and_csv_through_temporary_file(tmp_path: Path) -> None:
+    bounds = Bounds(5_661_000, 5_660_000, 6_650_000, 6_651_000)
+    geojson_path = tmp_path / "result.geojson"
+    csv_path = tmp_path / "result.csv"
+
+    export_grid(
+        geojson_path,
+        bounds,
+        GridOptions(include_1000=True, include_100=False, rounding_mode=RoundingMode.NONE, export_mode=ExportMode.GEOJSON),
+    )
+    export_grid(
+        csv_path,
+        bounds,
+        GridOptions(include_1000=True, include_100=False, rounding_mode=RoundingMode.NONE, export_mode=ExportMode.CSV),
+    )
+
+    assert json.loads(geojson_path.read_text(encoding="utf-8"))["type"] == "FeatureCollection"
+    assert csv_path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert not list(tmp_path.glob("*.tmp"))
 
 

@@ -21,11 +21,15 @@ def test_export_filename_normalization_tracks_selected_format() -> None:
     kml_format = export_format_for_mode(ExportMode.KML)
     zip_format = export_format_for_mode(ExportMode.ZIP)
     svg_format = export_format_by_id("svg_schema")
+    geojson_format = export_format_by_id("geojson_gis")
+    csv_format = export_format_by_id("csv_table")
 
     assert normalize_export_filename("", kml_format) == "aq_grid.kml"
     assert normalize_export_filename("custom.zip", kml_format) == "custom.kml"
     assert normalize_export_filename("custom", zip_format) == "custom.zip"
     assert normalize_export_filename("custom.kml", svg_format) == "custom.svg"
+    assert normalize_export_filename("custom.svg", geojson_format) == "custom.geojson"
+    assert normalize_export_filename("custom.geojson", csv_format) == "custom.csv"
 
 
 def test_output_path_uses_folder_and_normalized_filename() -> None:
@@ -67,3 +71,40 @@ def test_export_summary_describes_svg_layers() -> None:
     assert "Объектов SVG к записи: 404." in summary
     assert "Слой 1000x1000: 4 прямоугольника." in summary
     assert "Слой 100x100 внутри больших: 400 прямоугольников." in summary
+
+
+def test_export_summary_describes_geojson_features() -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.GEOJSON,
+    )
+    stats = calculate_grid_stats(_bounds_2x2_big(), options)
+
+    summary = format_export_summary(stats, options, Path("grid.geojson"))
+
+    assert "GeoJSON — GIS-полигоны" in summary
+    assert "Будет создан 1 GeoJSON-файл FeatureCollection." in summary
+    assert "Объектов GeoJSON к записи: 404." in summary
+    assert "Features 1000x1000: 4." in summary
+    assert "Features 100x100 внутри больших: 400." in summary
+    assert "Polygon в WGS84 lon/lat" in summary
+
+
+def test_export_summary_describes_csv_rows() -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.CSV,
+    )
+    stats = calculate_grid_stats(_bounds_2x2_big(), options)
+
+    summary = format_export_summary(stats, options, Path("grid.csv"))
+
+    assert "CSV — таблица проверки" in summary
+    assert "Будет создан 1 CSV-файл в UTF-8 with BOM с разделителем ;." in summary
+    assert "Объектов CSV к записи: 4." in summary
+    assert "Строки 1000x1000: 4." in summary
+    assert "границы СК-42 и центр WGS84" in summary

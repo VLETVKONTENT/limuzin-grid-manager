@@ -27,6 +27,8 @@ class ExportMode(StrEnum):
     KML = "kml"
     ZIP = "zip"
     SVG = "svg"
+    GEOJSON = "geojson"
+    CSV = "csv"
 
 
 class SmallNumberingMode(StrEnum):

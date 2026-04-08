@@ -26,7 +26,7 @@ def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
         assert "Экспорт" in tab_names
         assert window.export_filename.text() == "aq_grid.kml"
         assert "Будет создан 1 общий KML-файл." in window.export_summary.toPlainText()
-        assert window.export_format.count() >= 3
+        assert window.export_format.count() >= 5
         assert window.export_scroll_area.widgetResizable() is True
         assert window.export_scroll_area.widget().minimumWidth() >= 560
         assert window.export_summary.minimumHeight() >= 180
@@ -50,6 +50,24 @@ def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
         assert window.export_filename.text() == "aq_grid.svg"
         assert "Будет создан 1 SVG-файл." in window.export_summary.toPlainText()
         assert "Объектов SVG к записи:" in window.export_summary.toPlainText()
+
+        geojson_index = window.export_format.findData("geojson_gis")
+        assert geojson_index >= 0
+        window.export_format.setCurrentIndex(geojson_index)
+        window.update_stats()
+
+        assert window.export_filename.text() == "aq_grid.geojson"
+        assert "Будет создан 1 GeoJSON-файл FeatureCollection." in window.export_summary.toPlainText()
+        assert "Объектов GeoJSON к записи:" in window.export_summary.toPlainText()
+
+        csv_index = window.export_format.findData("csv_table")
+        assert csv_index >= 0
+        window.export_format.setCurrentIndex(csv_index)
+        window.update_stats()
+
+        assert window.export_filename.text() == "aq_grid.csv"
+        assert "Будет создан 1 CSV-файл" in window.export_summary.toPlainText()
+        assert "Объектов CSV к записи:" in window.export_summary.toPlainText()
 
         window._set_export_running(True)
         assert not window.cancel_export_button.isHidden()
