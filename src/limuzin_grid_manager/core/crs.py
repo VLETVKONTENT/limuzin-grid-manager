@@ -4,15 +4,16 @@ from functools import lru_cache
 
 from pyproj import CRS, Transformer
 
+from limuzin_grid_manager.core.zones import validate_gk_zone, zone_for_y
+
 
 def infer_gk_zone(y: float) -> int:
-    return int(abs(y) // 1_000_000)
+    return zone_for_y(y)
 
 
 @lru_cache(maxsize=32)
 def make_transformer_for_zone(zone: int) -> Transformer:
-    if zone < 1 or zone > 32:
-        raise ValueError(f"Некорректная зона Гаусса-Крюгера: {zone}. Ожидается 1..32.")
+    validate_gk_zone(zone)
 
     epsg = 28400 + zone
     try:

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from limuzin_grid_manager.core.crs import infer_gk_zone
 from limuzin_grid_manager.core.geometry import count_grid, round_bounds
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, GridSize, GridStats, RoundingMode
+from limuzin_grid_manager.core.zones import ZoneSegment, split_bounds_by_zone, zone_for_y
 
 
 WARN_EXPORT_PLACEMARKS = 100_000
@@ -47,6 +47,7 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
     small_grid: GridSize | None = None
     zone_left: int | None = None
     zone_right: int | None = None
+    zone_segments: tuple[ZoneSegment, ...] = ()
 
     if not errors:
         try:
@@ -55,8 +56,14 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
             errors.append(str(exc))
 
     if rounded_bounds is not None:
-        zone_left = infer_gk_zone(rounded_bounds.y_left)
-        zone_right = infer_gk_zone(rounded_bounds.y_right)
+        zone_left = zone_for_y(rounded_bounds.y_left)
+        zone_right = zone_for_y(rounded_bounds.y_right)
+        zone_split_error: str | None = None
+        try:
+            zone_segments = split_bounds_by_zone(rounded_bounds)
+        except ValueError as exc:
+            zone_split_error = str(exc)
+
         if not (1 <= zone_left <= 32) or not (1 <= zone_right <= 32):
             errors.append(
                 "Некорректная зона Гаусса-Крюгера: "
@@ -67,6 +74,8 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
                 "Область пересекает границу зон Гаусса-Крюгера: "
                 f"слева зона {zone_left}, справа зона {zone_right}. Разбейте область по зонам."
             )
+        elif zone_split_error is not None:
+            errors.append(zone_split_error)
 
         if options.include_1000:
             try:
@@ -106,6 +115,7 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
         zone_right=zone_right,
         warnings=tuple(warnings),
         errors=tuple(errors),
+        zone_segments=zone_segments,
     )
 
 

@@ -31,6 +31,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-08 Europe/Moscow: Проверен `v1.3.0`: `uv lock --offline`, `uv run --offline --extra dev pytest` (`56 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск `dist/LIMUZIN_GRID_MANAGER.exe` с `FileVersion` и `ProductVersion` `1.3.0.0`.
 - [x] 2026-04-08 Europe/Moscow: По визуальной проверке пользователя в `v1.3.0` исправлена верхняя панель проекта: пресеты и кнопка применения разведены по ширине, а меню `Проект` получило отступ под горячие клавиши.
 - [x] 2026-04-08 Europe/Moscow: Пользователь вручную протестировал текущую `v1.3.0` и подтвердил, что внесенные изменения работают; версия переведена из рабочей в стабильную перед публикацией.
+- [x] 2026-04-08 11:35 Europe/Moscow: Начата реализация `v1.4.0`: перечитаны `PLANS.md`, секция `v1.4.0` этого roadmap, `GRIDBASE.md`, текущие модули `core/crs.py`, `core/stats.py`, экспортные writer-ы и тесты; подтвержден объем как core-фундамент без включения многозонного экспорта до `v1.5.0`.
+- [x] 2026-04-08 11:40 Europe/Moscow: Реализован core-фундамент `v1.4.0`: добавлен `core/zones.py` с `ZoneSegment`, определением зоны, проверкой `1..32` и разбиением `Bounds`; `crs.py` использует общие helpers, а `GridStats` получил `zone_segments` и `is_multi_zone`.
+- [x] 2026-04-08 11:43 Europe/Moscow: Проверен и подготовлен `v1.4.0`: добавлены `tests/test_zones.py`, обновлены версия и документация; выполнены `uv lock --offline`, `uv run --offline --extra dev pytest` (`63 passed`), offline `compileall`, offline-сборка EXE и smoke-запуск с `FileVersion` и `ProductVersion` `1.4.0.0`.
+- [x] 2026-04-08 Europe/Moscow: Пользователь вручную протестировал `v1.4.0` и подтвердил, что внесенные изменения работают; версия переведена из рабочей в стабильную перед публикацией.
 
 ## Surprises & Discoveries
 
@@ -54,6 +58,12 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: Предупреждение hook-pyproj сохранилось и при offline-сборке `v1.3.0`, но EXE создан и smoke-запуск прошел по прежнему критерию.
   Evidence: `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` завершился с `Build complete!`; `dist/LIMUZIN_GRID_MANAGER.exe` имеет `FileVersion` и `ProductVersion` `1.3.0.0`, smoke-запуск показал `ExitedWithin3Seconds : False`.
+
+- Observation: При `v1.4.0` экспортные writer-ы все еще используют один `stats.zone` и один трансформер на весь результат.
+  Evidence: `core/kml.py`, `core/geojson.py` и `core/csv_export.py` создают transformer через `make_transformer_for_zone(stats.zone or 0)`, поэтому многозонный экспорт оставлен заблокированным до `v1.5.0`.
+
+- Observation: Предупреждение hook-pyproj сохранилось и при offline-сборке `v1.4.0`, но EXE создан и smoke-запуск прошел по прежнему критерию.
+  Evidence: `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` завершился с `Build complete!`; `dist/LIMUZIN_GRID_MANAGER.exe` имеет `FileVersion` и `ProductVersion` `1.4.0.0`, smoke-запуск показал `ExitedWithin3Seconds : False`.
 
 ## Decision Log
 
@@ -97,6 +107,14 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Требование этапа - умеренная оптимизация без большого редизайна. После `v1.2.0` вкладка уже была изолирована методом `_build_export_tab()`, поэтому достаточно убрать жесткую минимальную ширину, отключить горизонтальную прокрутку и скорректировать sizing combo-box-ов.
   Date/Author: 2026-04-08, Codex.
 
+- Decision: Для `v1.4.0` разбиение `Bounds` по зонам добавлено как core-фундамент, но `ensure_exportable()` продолжает блокировать область, пересекающую зоны.
+  Rationale: Writer-ы KML/ZIP/SVG/GeoJSON/CSV еще не умеют выбирать трансформер по сегменту и рассчитывать глобальную нумерацию поверх нескольких сегментов. Хранение `GridStats.zone_segments` дает следующий шаг без риска молча преобразовать часть области через неверную зону.
+  Date/Author: 2026-04-08, Codex.
+
+- Decision: `split_bounds_by_zone()` режет область по внутренним миллионным границам `Y` и назначает зону сегмента по середине интервала.
+  Rationale: `Bounds` в проекте работает как прямоугольный диапазон по ширине `y_right - y_left`; выбор точки внутри сегмента избегает ложной смены зоны на правой границе, которая одновременно является общей границей двух соседних сегментов.
+  Date/Author: 2026-04-08, Codex.
+
 ## Outcomes & Retrospective
 
 Текущая задача roadmap-файла выполнена: создан корневой `ROADMAPv2.md`, который можно дать будущей сессии Codex или человеку без истории этого разговора. Реализация кода `v2.0` теперь начата: этап `v1.1.0` выполнен и принят пользователем как стабильная версия после ручного теста.
@@ -110,6 +128,8 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 Итог `v1.3.0`: добавлен модуль `ui/themes.py` с темами `system/light`, `dark` и `high-contrast`, выбор темы доступен из верхней панели и меню `Вид`, хранится через `QSettings` и не попадает в `.lgm.json`. Предпросмотр остается 2D-схемой без карты, но получает палитру текущей темы. Вкладка `Экспорт` стала гибче для текущего набора KML/ZIP/SVG/GeoJSON/CSV: убрана жесткая минимальная ширина содержимого, отключена горизонтальная прокрутка, длинные combo-box-ы больше не раздувают окно. Проверка: `uv lock --offline`, `uv run --offline --extra dev pytest` (`56 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск. Пользователь вручную протестировал версию и подтвердил, что внесенные изменения работают; `v1.3.0` переведена в стабильную.
 
 После визуальной проверки пользователя в `v1.3.0` дополнительно исправлена верхняя панель: кнопка `Применить пресет` больше не налезает на выпадающий список пресетов, а пункты меню `Проект` получили дополнительный правый отступ, чтобы горячие клавиши не накладывались на текст действий.
+
+Итог `v1.4.0`: добавлен `core/zones.py` как фундамент автоматического разбиения по зонам с `ZoneSegment`, `zone_for_y()`, `validate_gk_zone()` и `split_bounds_by_zone()`. `GridStats` теперь хранит `zone_segments` и умеет сообщать `is_multi_zone`, но экспорт через несколько зон по-прежнему блокируется до подключения writer-ов в `v1.5.0`. Проверка: `uv run --extra dev pytest` (`63 passed`), `uv run --extra dev python -m compileall src tests`, `uv lock --offline`, `uv run --offline --extra dev pytest` (`63 passed`), `uv run --offline --extra dev python -m compileall src tests`, offline-сборка EXE и smoke-запуск с версией `1.4.0.0`. Пользователь вручную протестировал версию и подтвердил, что внесенные изменения работают; `v1.4.0` переведена в стабильную.
 
 ## Context and Orientation
 
@@ -130,6 +150,7 @@ LIMUZIN GRID MANAGER `v1.0.0` - Windows desktop-приложение на Python
 - `PLANS.md` - правила ExecPlan-документов.
 - `src/limuzin_grid_manager/core/models.py` - `Bounds`, `GridOptions`, `ExportMode`, `KmlStyle` и enum-настройки.
 - `src/limuzin_grid_manager/core/crs.py` - определение зоны и создание трансформера СК-42 / Гаусса-Крюгера -> WGS84.
+- `src/limuzin_grid_manager/core/zones.py` - определение зон, проверка диапазона `1..32` и разбиение `Bounds` на зональные сегменты.
 - `src/limuzin_grid_manager/core/stats.py` - проверки экспортируемости, предупреждения и оценки размера.
 - `src/limuzin_grid_manager/core/kml.py` - потоковая запись KML и ZIP.
 - `src/limuzin_grid_manager/app/export_formats.py` - описания экспортных форматов, расширений, диалогов и сводки.

@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from limuzin_grid_manager.core.zones import ZoneSegment
 
 
 DEFAULT_BIG_FILL_PALETTE = (
@@ -161,6 +165,7 @@ class GridStats:
     zone_right: int | None
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
+    zone_segments: tuple[ZoneSegment, ...] = ()
 
     @property
     def zone(self) -> int | None:
@@ -168,7 +173,13 @@ class GridStats:
             return None
         if self.zone_left != self.zone_right:
             return None
+        if self.zone_segments and any(segment.zone != self.zone_left for segment in self.zone_segments):
+            return None
         return self.zone_left
+
+    @property
+    def is_multi_zone(self) -> bool:
+        return len({segment.zone for segment in self.zone_segments}) > 1
 
 
 def normalize_big_tile_names(

@@ -1,6 +1,6 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v1.3.0`
+**Текущая версия:** `v1.4.0`
 
 **Статус:** стабильная версия, принята после ручного теста
 
@@ -185,11 +185,11 @@ lon, lat = transformer.transform(y, x)
 - в `pyproj` передается `Y, X`;
 - в KML записывается `lon,lat,0`.
 
-Ограничения стабильной версии:
+Ограничения текущей версии:
 
 - поддерживаются зоны Гаусса-Крюгера `1..32`;
 - если область пересекает границу зон, экспорт блокируется;
-- автоматического разбиения области по зонам в `v1.3.0` нет;
+- в core добавлен фундамент автоматического разбиения области по зонам, но пользовательский многозонный экспорт будет включен отдельным этапом `v1.5.0`;
 - область, пересекающую зоны, нужно разделить на отдельные проекты вручную.
 
 ## Экспорт
@@ -285,15 +285,16 @@ uv run --offline --extra dev python -m compileall src tests
 $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 ```
 
-Для `v1.3.0` проверено:
+Для `v1.4.0` проверено:
 
-- `56 passed`;
+- `63 passed`;
 - компиляция `src` и `tests` без ошибок;
+- тесты покрывают `core/zones.py`: одиночную зону, границу зон, разрез на две и несколько зон и неподдерживаемые зоны;
+- старая блокировка многозонного экспорта сохраняется до включения writer-ов в `v1.5.0`;
 - `uv lock --offline`, offline pytest и offline compileall прошли;
-- EXE собран с `FileVersion` и `ProductVersion` `1.3.0.0`;
+- EXE собран с `FileVersion` и `ProductVersion` `1.4.0.0`;
 - smoke-запуск EXE: процесс стартует и не завершается сразу;
-- темы `system/light`, `dark` и `high-contrast`, хранение в `QSettings` и отсутствие темы в `.lgm.json` покрыты UI-smoke тестами;
-- стабильные KML/ZIP/SVG/GeoJSON/CSV-сценарии продолжают проходить в автотестах.
+- PyInstaller сохранил прежнее предупреждение hook-pyproj о `share\proj`, но сборка завершилась успешно.
 
 ## Структура репозитория
 
@@ -321,6 +322,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 - [`src/limuzin_grid_manager/core/geometry.py`](src/limuzin_grid_manager/core/geometry.py) — нормализация границ, округление и построение сетки.
 - [`src/limuzin_grid_manager/core/crs.py`](src/limuzin_grid_manager/core/crs.py) — преобразование СК-42 / Гаусс-Крюгер в WGS84.
+- [`src/limuzin_grid_manager/core/zones.py`](src/limuzin_grid_manager/core/zones.py) — определение зон, проверка диапазона `1..32` и разбиение `Bounds` на зональные сегменты.
 - [`src/limuzin_grid_manager/core/numbering.py`](src/limuzin_grid_manager/core/numbering.py) — схемы нумерации `100x100`.
 - [`src/limuzin_grid_manager/core/export_cells.py`](src/limuzin_grid_manager/core/export_cells.py) — общий обход экспортируемых ячеек и нумерация для писателей.
 - [`src/limuzin_grid_manager/core/export_progress.py`](src/limuzin_grid_manager/core/export_progress.py) — общий прогресс и отмена экспорта.
@@ -341,7 +343,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - [`GITHUB.md`](GITHUB.md) — правила commit/push/tag/release и проверки перед публичным репозиторием.
 - [`roadmap.md`](roadmap.md) — история движения к стабильной версии `v1.0`.
 - [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v1.3.0.md`](versions/v1.3.0.md) — заметки текущей версии.
+- [`versions/v1.4.0.md`](versions/v1.4.0.md) — заметки текущей версии.
 
 ## Лицензия
 
@@ -355,10 +357,10 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 ## Текущая версия
 
-Текущая принятая версия: `v1.3.0`.
+Текущая принятая версия: `v1.4.0`.
 
-Предыдущая стабильная версия: `v1.2.0`.
+Предыдущая стабильная версия: `v1.3.0`.
 
-Изменения версии описаны в [`versions/v1.3.0.md`](versions/v1.3.0.md).
+Изменения версии описаны в [`versions/v1.4.0.md`](versions/v1.4.0.md).
 
 Готовый EXE для публикации должен прикрепляться к GitHub Release как asset, а не храниться в git-истории.
