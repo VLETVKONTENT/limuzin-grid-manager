@@ -12,6 +12,7 @@ from limuzin_grid_manager.core.export_cells import (
     big_tile_folder_name,
     big_tile_number,
     big_tile_placemark_name,
+    cell_zone,
     iter_grid_cells,
     iter_subcells,
     small_number_for_cell,
@@ -40,10 +41,10 @@ def write_kml_all(
 ) -> None:
     options = options.normalized()
     stats = ensure_exportable(bounds, options)
-    transformer = make_transformer_for_zone(stats.zone or 0)
     big_tile_names = dict(options.big_tile_names)
     kml_style = options.kml_style
     tracker = _ProgressTracker(progress, estimate_export_placemarks(stats, options), cancelled)
+    transformers: dict[int, object] = {}
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8", newline="\n") as fh:
@@ -57,6 +58,7 @@ def write_kml_all(
                 big_num = big_tile_number(row, col, stats.big_grid.cols, options.snake_big)
                 big_folder_name = big_tile_folder_name(big_num, big_tile_names)
                 big_placemark_name = big_tile_placemark_name(big_num, big_tile_names)
+                transformer = _transformer_for_zone(cell_zone(y_left, step_big), transformers)
                 fh.write("<Folder>\n")
                 fh.write(f"<name>{escape_xml(big_folder_name)}</name>\n")
                 fh.write("<open>0</open>\n")
@@ -94,6 +96,7 @@ def write_kml_all(
             fh.write("<Folder><name>Сетка 100x100</name><open>1</open>\n")
             for row, col, x_top, y_left in iter_grid_cells(stats.small_bounds, 100):
                 small_name = small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
+                transformer = _transformer_for_zone(cell_zone(y_left, 100), transformers)
                 _write_small_rectangle_placemark(
                     fh,
                     str(small_name),
@@ -136,14 +139,15 @@ def write_zip_per_big_tile(
     stats = ensure_exportable(bounds, options)
     assert stats.big_bounds is not None
     assert stats.big_grid is not None
-    transformer = make_transformer_for_zone(stats.zone or 0)
     big_tile_names = dict(options.big_tile_names)
     tracker = _ProgressTracker(progress, estimate_export_placemarks(stats, options), cancelled)
+    transformers: dict[int, object] = {}
 
     out_zip_path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(out_zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
         for row, col, x_top, y_left in iter_grid_cells(stats.big_bounds, 1000):
             big_num = big_tile_number(row, col, stats.big_grid.cols, options.snake_big)
+            transformer = _transformer_for_zone(cell_zone(y_left, 1000), transformers)
             zip_file.writestr(
                 f"tile_{big_num:03d}.kml",
                 _tile_kml(big_num, x_top, y_left, options, transformer, big_tile_names, tracker),
@@ -323,6 +327,14 @@ def _tile_kml(
         writer.write("</Folder>\n")
     _write_document_end(writer)
     return "".join(lines)
+
+
+def _transformer_for_zone(zone: int, cache: dict[int, object]) -> object:
+    transformer = cache.get(zone)
+    if transformer is None:
+        transformer = make_transformer_for_zone(zone)
+        cache[zone] = transformer
+    return transformer
 
 
 def _poly_style(fill_color: str | None, fill_opacity: int, outline: bool = True) -> str:

@@ -20,6 +20,26 @@ def zone_for_y(y: float) -> int:
     return int(abs(y) // GK_ZONE_WIDTH_M)
 
 
+def zone_for_y_interval(y_left: int, y_right: int) -> int:
+    if y_right <= y_left:
+        raise ValueError("Интервал Y должен иметь положительную ширину.")
+
+    boundaries = _zone_boundaries_inside(y_left, y_right)
+    if boundaries:
+        formatted = ", ".join(str(boundary) for boundary in boundaries)
+        raise ValueError(
+            "Экспортируемая ячейка пересекает границу зон Гаусса-Крюгера "
+            f"по Y={formatted}. Выровняйте границы по сетке или разделите область."
+        )
+
+    sample_y = (y_left + y_right) / 2
+    return validate_gk_zone(zone_for_y(sample_y))
+
+
+def zone_boundaries_inside(y_left: int, y_right: int) -> tuple[int, ...]:
+    return _zone_boundaries_inside(y_left, y_right)
+
+
 def validate_gk_zone(zone: int) -> int:
     if zone < GK_ZONE_MIN or zone > GK_ZONE_MAX:
         raise ValueError(

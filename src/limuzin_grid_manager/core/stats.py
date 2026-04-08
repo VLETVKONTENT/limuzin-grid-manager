@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from limuzin_grid_manager.core.geometry import count_grid, round_bounds
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, GridSize, GridStats, RoundingMode
-from limuzin_grid_manager.core.zones import ZoneSegment, split_bounds_by_zone, zone_for_y
+from limuzin_grid_manager.core.zones import ZoneSegment, split_bounds_by_zone, zone_boundaries_inside, zone_for_y
 
 
 WARN_EXPORT_PLACEMARKS = 100_000
@@ -64,17 +64,7 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
         except ValueError as exc:
             zone_split_error = str(exc)
 
-        if not (1 <= zone_left <= 32) or not (1 <= zone_right <= 32):
-            errors.append(
-                "Некорректная зона Гаусса-Крюгера: "
-                f"слева зона {zone_left}, справа зона {zone_right}. Ожидается 1..32."
-            )
-        elif zone_left != zone_right:
-            errors.append(
-                "Область пересекает границу зон Гаусса-Крюгера: "
-                f"слева зона {zone_left}, справа зона {zone_right}. Разбейте область по зонам."
-            )
-        elif zone_split_error is not None:
+        if zone_split_error is not None:
             errors.append(zone_split_error)
 
         if options.include_1000:
@@ -84,6 +74,8 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
                 big_grid = GridSize(big_rows, big_cols)
                 if big_grid.total <= 0:
                     errors.append("Нет ни одного полного квадрата 1000x1000 для экспорта.")
+                else:
+                    _add_zone_cell_alignment_error(big_bounds, 1000, big_grid.cols, "1000x1000", errors)
             except ValueError as exc:
                 errors.append(str(exc))
 
@@ -94,6 +86,8 @@ def calculate_grid_stats(bounds: Bounds, options: GridOptions) -> GridStats:
                 small_grid = GridSize(small_rows, small_cols)
                 if small_grid.total <= 0:
                     errors.append("Нет ни одного полного квадрата 100x100 для экспорта.")
+                else:
+                    _add_zone_cell_alignment_error(small_bounds, 100, small_grid.cols, "100x100", errors)
             except ValueError as exc:
                 errors.append(str(exc))
         elif options.include_100 and big_grid is not None:
@@ -194,6 +188,23 @@ def _add_large_grid_feedback(
             "Предпросмотр для этой области будет упрощен: часть линий и подписей скрывается, "
             "чтобы интерфейс оставался отзывчивым."
         )
+
+
+def _add_zone_cell_alignment_error(
+    bounds: Bounds,
+    step: int,
+    cols: int,
+    label: str,
+    errors: list[str],
+) -> None:
+    export_y_right = bounds.y_left + cols * step
+    for boundary in zone_boundaries_inside(bounds.y_left, export_y_right):
+        if (boundary - bounds.y_left) % step:
+            errors.append(
+                f"Сетка {label} пересекает границу зон Гаусса-Крюгера по Y={boundary} внутри одной ячейки. "
+                "Включите округление границ или задайте Y так, чтобы граница зоны проходила по ребру ячейки."
+            )
+            return
 
 
 def _estimate_export_placemarks(

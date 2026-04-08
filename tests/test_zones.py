@@ -4,7 +4,13 @@ import pytest
 
 from limuzin_grid_manager.core.models import Bounds, ExportMode, GridOptions, RoundingMode
 from limuzin_grid_manager.core.stats import calculate_grid_stats
-from limuzin_grid_manager.core.zones import ZoneSegment, split_bounds_by_zone, validate_gk_zone, zone_for_y
+from limuzin_grid_manager.core.zones import (
+    ZoneSegment,
+    split_bounds_by_zone,
+    validate_gk_zone,
+    zone_for_y,
+    zone_for_y_interval,
+)
 
 
 def test_zone_for_y_matches_gk_million_prefix() -> None:
@@ -54,7 +60,15 @@ def test_split_bounds_by_zone_rejects_unsupported_zone() -> None:
         validate_gk_zone(33)
 
 
-def test_stats_keeps_zone_crossing_error_until_export_writers_are_ready() -> None:
+def test_zone_for_y_interval_rejects_cell_crossing_boundary() -> None:
+    assert zone_for_y_interval(6_999_000, 7_000_000) == 6
+    assert zone_for_y_interval(7_000_000, 7_001_000) == 7
+
+    with pytest.raises(ValueError, match="Экспортируемая ячейка пересекает границу зон"):
+        zone_for_y_interval(6_999_500, 7_000_500)
+
+
+def test_stats_allows_aligned_multi_zone_export() -> None:
     options = GridOptions(
         include_1000=True,
         include_100=False,
@@ -68,4 +82,19 @@ def test_stats_keeps_zone_crossing_error_until_export_writers_are_ready() -> Non
     assert stats.is_multi_zone
     assert [segment.zone for segment in stats.zone_segments] == [6, 7]
     assert stats.zone is None
-    assert any("границу зон" in error for error in stats.errors)
+    assert stats.errors == ()
+
+
+def test_stats_rejects_cell_crossing_zone_boundary() -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+    bounds = Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_999_500, y_right=7_001_500)
+
+    stats = calculate_grid_stats(bounds, options)
+
+    assert stats.is_multi_zone
+    assert any("внутри одной ячейки" in error for error in stats.errors)

@@ -9,6 +9,7 @@ from limuzin_grid_manager.core.crs import ck42_to_wgs84, make_transformer_for_zo
 from limuzin_grid_manager.core.export_cells import (
     big_tile_number,
     big_tile_placemark_name,
+    cell_zone,
     iter_grid_cells,
     iter_subcells,
     small_number_for_cell,
@@ -28,16 +29,15 @@ def write_geojson_all(
 ) -> None:
     options = options.normalized()
     stats = ensure_exportable(bounds, options)
-    transformer = make_transformer_for_zone(stats.zone or 0)
-    zone = stats.zone or 0
     big_tile_names = dict(options.big_tile_names)
     tracker = ProgressTracker(progress, estimate_export_placemarks(stats, options), cancelled)
+    transformers: dict[int, object] = {}
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8", newline="\n") as fh:
         _write_collection_start(fh)
         first = True
-        for feature in _iter_features(options, stats, transformer, zone, big_tile_names):
+        for feature in _iter_features(options, stats, transformers, big_tile_names):
             if not first:
                 fh.write(",")
             fh.write("\n")
@@ -59,8 +59,7 @@ def _write_collection_end(fh: TextIO) -> None:
 def _iter_features(
     options: GridOptions,
     stats: GridStats,
-    transformer: object,
-    zone: int,
+    transformers: dict[int, object],
     big_tile_names: dict[int, str],
 ) -> Iterator[dict[str, Any]]:
     if options.include_1000:
@@ -69,6 +68,8 @@ def _iter_features(
         for row, col, x_top, y_left in iter_grid_cells(stats.big_bounds, 1000):
             big_num = big_tile_number(row, col, stats.big_grid.cols, options.snake_big)
             big_name = big_tile_placemark_name(big_num, big_tile_names)
+            zone = cell_zone(y_left, 1000)
+            transformer = _transformer_for_zone(zone, transformers)
             yield _feature("1000x1000", zone, big_num, big_name, None, x_top, y_left, 1000, transformer)
 
             if options.include_100:
@@ -92,6 +93,8 @@ def _iter_features(
         assert stats.small_grid is not None
         for row, col, x_top, y_left in iter_grid_cells(stats.small_bounds, 100):
             small_num = small_number_for_cell(row, col, stats.small_grid.rows, stats.small_grid.cols, options)
+            zone = cell_zone(y_left, 100)
+            transformer = _transformer_for_zone(zone, transformers)
             yield _feature("100x100", zone, None, None, small_num, x_top, y_left, 100, transformer)
 
 
@@ -135,3 +138,11 @@ def _polygon_coordinates(x_top: int, y_left: int, step: int, transformer: object
         lon, lat = ck42_to_wgs84(x, y, transformer)
         coords.append([round(lon, 7), round(lat, 7)])
     return coords
+
+
+def _transformer_for_zone(zone: int, cache: dict[int, object]) -> object:
+    transformer = cache.get(zone)
+    if transformer is None:
+        transformer = make_transformer_for_zone(zone)
+        cache[zone] = transformer
+    return transformer

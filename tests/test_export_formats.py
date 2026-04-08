@@ -108,3 +108,19 @@ def test_export_summary_describes_csv_rows() -> None:
     assert "Объектов CSV к записи: 4." in summary
     assert "Строки 1000x1000: 4." in summary
     assert "границы СК-42 и центр WGS84" in summary
+
+
+def test_export_summary_mentions_multizone_cell_transformers() -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.GEOJSON,
+    )
+    bounds = Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_999_000, y_right=7_001_000)
+    stats = calculate_grid_stats(bounds, options)
+
+    summary = format_export_summary(stats, options, Path("grid.geojson"))
+
+    assert "Зоны экспорта: 6, 7; трансформер выбирается по ячейке." in summary

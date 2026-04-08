@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from limuzin_grid_manager.core.geometry import snake_index
 from limuzin_grid_manager.core.models import BigTileFillMode, Bounds, GridOptions, KmlStyle
 from limuzin_grid_manager.core.numbering import small_number
+from limuzin_grid_manager.core.zones import zone_for_y_interval
 
 
 def iter_grid_cells(bounds: Bounds, step: int) -> Iterator[tuple[int, int, int, int]]:
@@ -23,6 +24,10 @@ def iter_subcells(x_top: int, y_left: int) -> Iterator[tuple[int, int, int, int]
         for col in range(10):
             small_y_left = y_left + col * 100
             yield row, col, small_x_top, small_y_left
+
+
+def cell_zone(y_left: int, step: int) -> int:
+    return zone_for_y_interval(y_left, y_left + step)
 
 
 def big_tile_number(row: int, col: int, cols: int, snake_big: bool) -> int:

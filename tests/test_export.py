@@ -11,6 +11,7 @@ import pytest
 
 from limuzin_grid_manager.app.exporter import export_grid
 from limuzin_grid_manager.core.csv_export import CSV_HEADER, write_csv_all
+from limuzin_grid_manager.core.crs import ck42_to_wgs84, make_transformer_for_zone
 from limuzin_grid_manager.core.geojson import write_geojson_all
 from limuzin_grid_manager.core.kml import write_kml_all, write_zip_per_big_tile
 from limuzin_grid_manager.core.kml import ExportCancelled
@@ -31,6 +32,10 @@ from limuzin_grid_manager.core.models import (
 
 def _bounds_2x2_big() -> Bounds:
     return Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_650_000, y_right=6_652_000)
+
+
+def _bounds_2x2_big_crossing_zones() -> Bounds:
+    return Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_999_000, y_right=7_001_000)
 
 
 def test_write_kml_all_is_xml_without_colored_fill(tmp_path: Path) -> None:
@@ -570,7 +575,93 @@ def test_zip_keeps_standard_filename_with_custom_big_tile_name(tmp_path: Path) -
     assert placemark_names == ["Северный участок"]
 
 
-def test_zone_crossing_raises(tmp_path: Path) -> None:
+def test_multizone_kml_uses_transformer_for_each_big_tile(tmp_path: Path) -> None:
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.KML,
+    )
+
+    out_path = tmp_path / "multizone.kml"
+    write_kml_all(out_path, _bounds_2x2_big_crossing_zones(), options)
+    root = ElementTree.fromstring(out_path.read_text(encoding="utf-8"))
+    placemarks = root.findall(".//{http://www.opengis.net/kml/2.2}Placemark")
+    coordinates = [
+        placemark.find(".//{http://www.opengis.net/kml/2.2}coordinates").text
+        for placemark in placemarks
+    ]
+    first_lon, first_lat, _ = coordinates[0].split()[0].split(",")
+    second_lon, second_lat, _ = coordinates[1].split()[0].split(",")
+    expected_zone_6 = ck42_to_wgs84(5_662_000, 6_999_000, make_transformer_for_zone(6))
+    expected_zone_7 = ck42_to_wgs84(5_662_000, 7_000_000, make_transformer_for_zone(7))
+
+    assert len(placemarks) == 4
+    assert (float(first_lon), float(first_lat)) == pytest.approx(expected_zone_6, abs=1e-7)
+    assert (float(second_lon), float(second_lat)) == pytest.approx(expected_zone_7, abs=1e-7)
+
+
+def test_multizone_geojson_csv_svg_and_zip_keep_global_cells(tmp_path: Path) -> None:
+    bounds = _bounds_2x2_big_crossing_zones()
+    options = GridOptions(
+        include_1000=True,
+        include_100=False,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+    )
+
+    geojson_path = tmp_path / "multizone.geojson"
+    csv_path = tmp_path / "multizone.csv"
+    svg_path = tmp_path / "multizone.svg"
+    zip_path = tmp_path / "multizone.zip"
+    write_geojson_all(geojson_path, bounds, GridOptions(**{**options.__dict__, "export_mode": ExportMode.GEOJSON}))
+    write_csv_all(csv_path, bounds, GridOptions(**{**options.__dict__, "export_mode": ExportMode.CSV}))
+    write_svg_all(svg_path, bounds, GridOptions(**{**options.__dict__, "export_mode": ExportMode.SVG}))
+    write_zip_per_big_tile(zip_path, bounds, GridOptions(**{**options.__dict__, "export_mode": ExportMode.ZIP}))
+
+    features = json.loads(geojson_path.read_text(encoding="utf-8"))["features"]
+    csv_rows = list(csv.DictReader(io.StringIO(csv_path.read_bytes().decode("utf-8-sig")), delimiter=";"))
+    svg_root = ElementTree.fromstring(svg_path.read_text(encoding="utf-8"))
+    svg_ns = "{http://www.w3.org/2000/svg}"
+    rects = svg_root.findall(f".//{svg_ns}rect")
+
+    assert [feature["properties"]["zone"] for feature in features] == [6, 7, 6, 7]
+    assert [feature["properties"]["big_number"] for feature in features] == [1, 2, 3, 4]
+    assert [row["zone"] for row in csv_rows] == ["6", "7", "6", "7"]
+    assert [row["big_number"] for row in csv_rows] == ["1", "2", "3", "4"]
+    assert svg_root.attrib["data-zone"] == "6,7"
+    assert {rect.attrib["data-zone"] for rect in rects} == {"6", "7"}
+    with zipfile.ZipFile(zip_path) as zf:
+        assert sorted(zf.namelist()) == ["tile_001.kml", "tile_002.kml", "tile_003.kml", "tile_004.kml"]
+
+
+def test_multizone_geojson_keeps_small_numbers_local_inside_big_tiles(tmp_path: Path) -> None:
+    out_path = tmp_path / "multizone-small.geojson"
+    options = GridOptions(
+        include_1000=True,
+        include_100=True,
+        snake_big=False,
+        rounding_mode=RoundingMode.NONE,
+        export_mode=ExportMode.GEOJSON,
+    )
+    bounds = Bounds(x_top=5_661_000, x_bottom=5_660_000, y_left=6_999_000, y_right=7_001_000)
+
+    write_geojson_all(out_path, bounds, options)
+    features = json.loads(out_path.read_text(encoding="utf-8"))["features"]
+
+    assert len(features) == 202
+    assert features[0]["properties"]["layer"] == "1000x1000"
+    assert features[0]["properties"]["zone"] == 6
+    assert features[1]["properties"]["small_number"] == 1
+    assert features[1]["properties"]["zone"] == 6
+    assert features[101]["properties"]["layer"] == "1000x1000"
+    assert features[101]["properties"]["zone"] == 7
+    assert features[102]["properties"]["small_number"] == 1
+    assert features[102]["properties"]["zone"] == 7
+
+
+def test_cell_crossing_zone_boundary_raises(tmp_path: Path) -> None:
     options = GridOptions(
         include_1000=True,
         include_100=False,
@@ -578,7 +669,7 @@ def test_zone_crossing_raises(tmp_path: Path) -> None:
         rounding_mode=RoundingMode.NONE,
         export_mode=ExportMode.KML,
     )
-    bounds = Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_999_000, y_right=7_001_000)
+    bounds = Bounds(x_top=5_662_000, x_bottom=5_660_000, y_left=6_999_500, y_right=7_001_500)
 
-    with pytest.raises(ValueError, match="границу зон"):
+    with pytest.raises(ValueError, match="внутри одной ячейки"):
         write_kml_all(tmp_path / "bad.kml", bounds, options)

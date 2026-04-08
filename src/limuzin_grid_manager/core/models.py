@@ -169,11 +169,14 @@ class GridStats:
 
     @property
     def zone(self) -> int | None:
+        if self.zone_segments:
+            zones = {segment.zone for segment in self.zone_segments}
+            if len(zones) == 1:
+                return next(iter(zones))
+            return None
         if self.zone_left is None or self.zone_right is None:
             return None
         if self.zone_left != self.zone_right:
-            return None
-        if self.zone_segments and any(segment.zone != self.zone_left for segment in self.zone_segments):
             return None
         return self.zone_left
 

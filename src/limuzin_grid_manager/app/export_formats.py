@@ -166,6 +166,9 @@ def format_export_summary(stats: GridStats | None, options: GridOptions, out_pat
     if placemark_count > 0:
         lines.append(f"Объектов {export_format.object_label} к записи: {placemark_count:,}.".replace(",", " "))
         lines.append(f"Оценка размера результата: около {_format_bytes(estimate_export_size_bytes(stats, options))}.")
+        zone_summary = _format_zone_summary(stats)
+        if zone_summary:
+            lines.append(zone_summary)
         lines.append("")
 
     if export_mode == ExportMode.ZIP:
@@ -235,6 +238,20 @@ def _plural_rectangles(count: int) -> str:
     if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
         return "прямоугольника"
     return "прямоугольников"
+
+
+def _format_zone_summary(stats: GridStats) -> str:
+    if stats.zone_segments:
+        zones = tuple(dict.fromkeys(segment.zone for segment in stats.zone_segments))
+    elif stats.zone is not None:
+        zones = (stats.zone,)
+    else:
+        zones = ()
+    if len(zones) > 1:
+        return f"Зоны экспорта: {', '.join(str(zone) for zone in zones)}; трансформер выбирается по ячейке."
+    if len(zones) == 1:
+        return f"Зона экспорта: {zones[0]}."
+    return ""
 
 
 def _format_bytes(value: int) -> str:
