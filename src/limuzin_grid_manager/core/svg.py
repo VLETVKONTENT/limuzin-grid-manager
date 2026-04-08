@@ -245,18 +245,22 @@ def _write_label(
 ) -> None:
     x, y = _svg_xy(canvas_bounds, x_top, y_left)
     font_size = 140 if step_x >= 1000 else 28
+    is_small_label = layer == "100x100"
+    baseline = "middle" if is_small_label else "central"
     attrs = [
         f'x="{x + step_y / 2:g}"',
         f'y="{y + step_x / 2:g}"',
         f'font-size="{font_size}"',
         'font-family="Arial, sans-serif"',
         'text-anchor="middle"',
-        'dominant-baseline="central"',
+        f'dominant-baseline="{baseline}"',
         'fill="#111111"',
         'pointer-events="none"',
         f'data-layer="{escape_xml(layer)}"',
         f'data-zone="{zone}"',
     ]
+    if is_small_label:
+        attrs.append('alignment-baseline="middle"')
     if big_number is not None:
         attrs.append(f'data-big-number="{big_number}"')
     if small_number is not None:

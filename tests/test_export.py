@@ -86,6 +86,12 @@ def test_write_svg_all_is_xml_with_layers_and_labels(tmp_path: Path) -> None:
     assert sum(1 for rect in rects if rect.attrib["data-layer"] == "100x100") == 400
     assert rects[0].attrib["data-big-number"] == "1"
     assert labels[0].text == "001"
+    small_rect = next(rect for rect in rects if rect.attrib.get("data-small-number") == "1")
+    small_label = next(label for label in labels if label.attrib.get("data-small-number") == "1")
+    assert float(small_label.attrib["x"]) == float(small_rect.attrib["x"]) + float(small_rect.attrib["width"]) / 2
+    assert float(small_label.attrib["y"]) == float(small_rect.attrib["y"]) + float(small_rect.attrib["height"]) / 2
+    assert small_label.attrib["dominant-baseline"] == "middle"
+    assert small_label.attrib["alignment-baseline"] == "middle"
 
 
 def test_write_geojson_all_is_feature_collection_with_wgs84_properties(tmp_path: Path) -> None:
