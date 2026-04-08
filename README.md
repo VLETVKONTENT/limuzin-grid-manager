@@ -1,6 +1,6 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v1.6.0`
+**Текущая версия:** `v2.0.0`
 
 **Статус:** стабильная версия, принята после ручного теста
 
@@ -288,7 +288,7 @@ uv run --offline --extra dev python -m compileall src tests
 $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 ```
 
-Для `v1.6.0` проверено:
+Для `v2.0.0` проверено:
 
 - `69 passed`;
 - компиляция `src` и `tests` без ошибок;
@@ -296,7 +296,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - KML, ZIP, SVG, GeoJSON и CSV проверяются на многозонной области;
 - SVG-тест проверяет, что подписи `100x100` находятся в геометрическом центре прямоугольников и используют центральную baseline-привязку;
 - `uv lock --offline`, offline pytest и offline compileall прошли;
-- EXE собран с `FileVersion` и `ProductVersion` `1.6.0.0`;
+- EXE собран с `FileVersion` и `ProductVersion` `2.0.0.0`;
 - smoke-запуск EXE: процесс стартует и не завершается сразу;
 - PyInstaller сохранил прежнее предупреждение hook-pyproj о `share\proj`, но сборка завершилась успешно.
 - Пользователь вручную протестировал версию и подтвердил, что внесенные изменения работают.
@@ -348,7 +348,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - [`GITHUB.md`](GITHUB.md) — правила commit/push/tag/release и проверки перед публичным репозиторием.
 - [`roadmap.md`](roadmap.md) — история движения к стабильной версии `v1.0`.
 - [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v1.6.0.md`](versions/v1.6.0.md) — заметки текущей версии.
+- [`versions/v2.0.0.md`](versions/v2.0.0.md) — заметки текущей версии.
 
 ## Лицензия
 
@@ -362,10 +362,10 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 ## Текущая версия
 
-Текущая принятая версия: `v1.6.0`.
+Текущая принятая версия: `v2.0.0`.
 
-Предыдущая стабильная версия: `v1.5.0`.
+Предыдущая стабильная версия: `v1.6.0`.
 
-Изменения версии описаны в [`versions/v1.6.0.md`](versions/v1.6.0.md).
+Изменения версии описаны в [`versions/v2.0.0.md`](versions/v2.0.0.md).
 
 Готовый EXE для публикации должен прикрепляться к GitHub Release как asset, а не храниться в git-истории.
