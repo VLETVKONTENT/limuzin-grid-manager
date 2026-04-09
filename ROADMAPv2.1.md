@@ -22,7 +22,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-09 Europe/Moscow: Проверены реальные пользовательские образцы вне репозитория: `образец для excel.xlsx` и `пример итогового файла.kml`; подтверждены колонки `ФИО | Дата | Координаты`, Excel serial `46115 -> 03.04.2026`, структура `Placemark` и использование `IconStyle/color`.
 - [x] 2026-04-09 Europe/Moscow: Подтверждено, что текущее главное окно приложения остается grid-ориентированным: вкладки `Предпросмотр`, `Проверка`, `Экспорт`; отдельное окно точек безопаснее, чем встраивание новой вкладки.
 - [x] 2026-04-09 Europe/Moscow: Создан `ROADMAPv2.1.md` как самостоятельный living ExecPlan-roadmap для пути `v2.0.0 -> v2.1.0`.
-- [ ] Реализация `v2.0.1`: foundation point-domain, отдельные модели, point-KML writer и point export service без смешивания с grid-flow.
+- [x] 2026-04-09 Europe/Moscow: Реализован `v2.0.1`: добавлены `src/limuzin_grid_manager/core/points.py`, `src/limuzin_grid_manager/core/point_kml.py`, `src/limuzin_grid_manager/app/point_import.py` и `src/limuzin_grid_manager/app/point_exporter.py`; point-flow остается изолированным от `GridOptions`, `ExportMode`, `.lgm.json` и grid-UI.
+- [x] 2026-04-09 Europe/Moscow: Для `v2.0.1` добавлен `tests/test_points.py`; `uv run --extra dev pytest` прошло с результатом `76 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок.
+- [x] 2026-04-09 Europe/Moscow: Пользователь вручную протестировал `v2.0.1` и подтвердил, что изменения работают; выполнены `uv lock --offline`, `uv run --offline --extra dev pytest`, `uv run --offline --extra dev python -m compileall src tests`, сборка EXE и smoke-запуск `dist/LIMUZIN_GRID_MANAGER.exe`.
 - [ ] Реализация `v2.0.2`: импорт `.xlsx` через `openpyxl`, строгая валидация sample-first формата и координатной/датовой логики.
 - [ ] Реализация `v2.0.3`: отдельное окно `Точки из Excel` внутри того же приложения и его интеграция через меню `Инструменты`.
 - [ ] Реализация `v2.0.4`: безопасная запись point-KML через временный файл, отмена, полировка UX и EXE-готовность с новой Excel-зависимостью.
@@ -56,6 +58,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: В этой среде удобнее находить пользовательские sample-файлы через PowerShell, чем через прямые литералы путей в inline Python, потому что Unicode-имена файлов могут ломать наивные строковые литералы.
   Evidence: прямое открытие образцов по вручную набранному пути завершалось `OSError: [Errno 22] Invalid argument`, а получение полного пути через `Get-ChildItem` и передачу через environment variable сработало.
+
+- Observation: Foundation-слой точек удалось ввести без раннего подключения `openpyxl` и без изменений runtime-UI.
+  Evidence: `v2.0.1` ограничился новыми `core/app`-модулями и тестами; полный прогон `pytest` дал `76 passed`, при этом `pyproject.toml` пока не получил Excel-зависимость и `ui/main_window.py` не менялся.
 
 ## Decision Log
 
@@ -103,6 +108,14 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Такой контракт покрывает sample-формат `х-5649764 y-6661612`, устойчив к регистру и кириллической/латинской букве, но не допускает двусмысленный ввод.
   Date/Author: 2026-04-09, Codex.
 
+- Decision: `PointImportResult` и `PointImportError` вводятся уже в `v2.0.1`, хотя чтение workbook остается задачей `v2.0.2`.
+  Rationale: Это фиксирует доменный контракт между core, будущим importer и будущим окном точек, не добавляя `openpyxl` и не смешивая milestone-этапы.
+  Date/Author: 2026-04-09, Codex.
+
+- Decision: `v2.0.1` фиксируется как рабочая версия в `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt` и `versions/`, но последней принятой стабильной версией остается `v2.0.0`.
+  Rationale: milestone выполнен и проверен автоматическими тестами, однако roadmap прямо говорит, что стабильным релизом этого направления станет только `v2.1.0` после следующих этапов и ручного пользовательского теста.
+  Date/Author: 2026-04-09, Codex.
+
 - Decision: Дата точки нормализуется в `dd.mm.yyyy`; поддерживаются как минимум Excel serial, `datetime/date` от `openpyxl` и уже готовая текстовая строка `dd.mm.yyyy`.
   Rationale: Это покрывает sample-файл и позволяет принять обычные датовые ячейки Excel, не расширяя задачу до универсального парсинга всех форматов дат.
   Date/Author: 2026-04-09, Codex.
@@ -117,11 +130,12 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 ## Outcomes & Retrospective
 
-Текущая задача этого roadmap-файла выполнена: создан самостоятельный `ROADMAPv2.1.md`, который можно передать новой сессии Codex или человеку без истории переписки. В документе уже зафиксированы не только пожелания пользователя, но и фактическое состояние репозитория, поведение текущего grid-приложения, структура sample Excel и структура sample KML.
+Milestone `v2.0.1` завершен как рабочий этап roadmap. В репозитории появился минимальный, но уже проверяемый point-domain: `PointRecord`, `PointStyle`, helpers нормализации, `PointImportResult`/`PointImportError`, отдельный `point_kml` writer и `point_exporter`. Все это живет в новых `core/app`-модулях и не расширяет существующие grid-модели.
 
-На момент создания файла код `v2.1` еще не реализован. Это ожидаемо: задача текущего шага - не внедрить feature, а подготовить самодостаточный ExecPlan для следующих рабочих этапов. Для будущей реализации самым важным выигрышем является то, что область решения уже сужена: поддерживается только `.xlsx`, только sample-first шаблон, только отдельное окно, только один общий стиль точек и только раздельное развитие point-flow и grid-flow.
+Самое важное достижение этапа - зафиксирован контракт point-flow до появления Excel-импорта и отдельного окна. Следующие milestones теперь могут опираться на готовые сущности, формат итогового point-KML и тесты, не переизобретая базовые типы и не споря о структуре `Placemark`.
 
-Главный риск, снятый этим документом заранее, - архитектурное смешение двух независимых сценариев. Roadmap фиксирует, что point-flow должен переиспользовать только низкоуровневые части вроде `crs.py`, темы приложения и паттерна атомарной записи, но не должен расширять `GridOptions`, текущую вкладку `Экспорт` и `.lgm.json`. Это делает будущую `v2.1.0` расширением приложения, а не распуханием grid-ядра.
+Roadmap при этом остается активным: `v2.0.2`, `v2.0.3`, `v2.0.4` и финальная подготовка `v2.1.0` еще впереди. Последняя принятая стабильная версия приложения все еще `v2.0.0`; `v2.0.1` зафиксирован как рабочая версия после автоматической проверки `pytest` и `compileall`, но без ручного пользовательского теста и без релизной EXE-подготовки.
+Roadmap при этом остается активным: `v2.0.2`, `v2.0.3`, `v2.0.4` и финальная подготовка `v2.1.0` еще впереди. При этом сам milestone `v2.0.1` уже доведен до принятой версии: после ручного теста пользователя и офлайн-релизной проверки текущей принятой версией проекта стала `v2.0.1`.
 
 ## Context and Orientation
 
@@ -366,3 +380,5 @@ UI-слой строится отдельно в `src/limuzin_grid_manager/ui/po
     --collect-data openpyxl
 
 Revision note 2026-04-09 Europe/Moscow: файл создан как новый living roadmap для пути `v2.0.0 -> v2.1.0` после проверки текущего репозитория и реальных пользовательских образцов Excel/KML; зафиксированы отдельное окно точек, sample-first `.xlsx`, один общий стиль точек и независимость point-flow от grid-flow.
+Revision note 2026-04-09 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.1`; зафиксированы новый point-domain, point-KML writer, point export service, автотесты (`76 passed`) и оформление `v2.0.1` как рабочей версии при сохранении `v2.0.0` последней принятой стабильной версии.
+Revision note 2026-04-09 Europe/Moscow: roadmap обновлен после ручного теста пользователя и офлайн-релизной проверки; `v2.0.1` переведена из рабочей в принятую версию, зафиксированы сборка EXE `2.0.1.0` и smoke-запуск.

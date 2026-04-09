@@ -42,6 +42,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - Начиная с `v1.5.0`, многозонный экспорт включен для KML, ZIP, SVG, GeoJSON и CSV: writer-ы выбирают трансформер по зоне экспортируемой ячейки, нумерация больших квадратов остается глобальной, ZIP сохраняет `tile_###.kml`, а ячейка, пересекающая границу зоны внутри себя, блокируется понятной ошибкой.
 - Начиная с `v1.6.0`, SVG-подписи малых квадратов `100x100` центрируются через SVG baseline `middle`, не меняя KML/ZIP/GeoJSON/CSV и не меняя координатную математику.
 - Начиная с `v2.0.0`, возможности этапов `v1.1.0`-`v1.6.0` зафиксированы как стабильный major-релиз: KML/ZIP, SVG, GeoJSON, CSV, темы интерфейса и многозонный экспорт прошли единую релизную проверку и ручной тест пользователя.
+- Начиная с `v2.0.1`, в кодовой базе появился отдельный foundation-слой для point-flow: `PointRecord`, `PointStyle`, point-KML writer и point export service. Этот слой пока не встроен в `MainWindow`, не расширяет `GridOptions`, `ExportMode` и `.lgm.json` и служит базой для следующих этапов Excel/point-функциональности.
 
 Важное правило KML-стиля:
 
@@ -72,10 +73,14 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `src/limuzin_grid_manager/__main__.py` — входная точка GUI.
 - `src/limuzin_grid_manager/app/exporter.py` — прикладной экспорт, парсинг координат из UI, проверка свободного места и атомарная запись результата.
 - `src/limuzin_grid_manager/app/export_formats.py` — описания экспортных вариантов, расширений, путей и сводки перед экспортом.
+- `src/limuzin_grid_manager/app/point_exporter.py` — прикладной point-export service для записи готового point-KML без смешивания с grid-export.
+- `src/limuzin_grid_manager/app/point_import.py` — point-контракты импорта: `PointImportResult`, `PointImportError` и сводка состояния point-flow.
 - `src/limuzin_grid_manager/app/project.py` — сохранение/открытие `.lgm.json` и встроенные пресеты проекта.
 - `src/limuzin_grid_manager/app/resources.py` — поиск ресурсов в исходниках и PyInstaller bundle.
 - `src/limuzin_grid_manager/core/models.py` — dataclass-модели и enum-режимы.
 - `src/limuzin_grid_manager/core/crs.py` — преобразование СК-42 / Гаусс-Крюгер -> WGS84.
+- `src/limuzin_grid_manager/core/points.py` — point-domain: `PointRecord`, `PointStyle`, нормализация даты, координат, цвета и KML-кодирования цвета.
+- `src/limuzin_grid_manager/core/point_kml.py` — отдельная запись point-KML `Placemark`/`Point` с `IconStyle/color`, `description` и `ExtendedData/comment`.
 - `src/limuzin_grid_manager/core/zones.py` — определение зон Гаусса-Крюгера, проверка `1..32` и разбиение `Bounds` на `ZoneSegment`.
 - `src/limuzin_grid_manager/core/geometry.py` — нормализация границ, округление, сетка, змейка.
 - `src/limuzin_grid_manager/core/export_cells.py` — общий обход экспортируемых ячеек, номера больших квадратов, номера `100x100` и заливка больших квадратов для разных writer-модулей.
@@ -95,6 +100,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `tests/test_core.py` — геометрия, округление, змейка.
 - `tests/test_zones.py` — определение зон, сегментация `Bounds` по границам зон, разрешенный многозонный экспорт и ошибка для ячейки, которая пересекает границу зоны внутри себя.
 - `tests/test_export.py` — KML, ZIP, SVG, GeoJSON, CSV, KML/SVG-стиль, заливка `1000x1000` и `100x100`, многозонный экспорт и ошибка для смещенной ячейки на границе зоны.
+- `tests/test_points.py` — point-domain, KML-цвет `aabbggrr`, XML-структура point-KML, progress writer-а и вызов point export service.
 - `tests/test_export_formats.py` — форматирование путей и сводки вкладки `Экспорт` для KML/ZIP/SVG/GeoJSON/CSV.
 - `tests/test_project.py` — сохранение/открытие `.lgm.json`, нормализация имени проекта, пресеты и ошибки схемы.
 - `tests/test_ui.py` — offscreen smoke-тесты `MainWindow` и вкладки `Экспорт`.
@@ -622,6 +628,8 @@ layer;zone;big_number;big_name;small_number;x_top;x_bottom;y_left;y_right;center
 - `PySide6`
 - `pyproj`
 
+`v2.0.1` пока не добавляет новые runtime-зависимости: foundation point-flow реализован поверх уже существующих модулей. `openpyxl` и изменения EXE-сборки для Excel остаются задачей следующих этапов roadmap.
+
 Dev-зависимости:
 
 - `pytest`
@@ -668,6 +676,8 @@ uv run --extra dev pytest
 - Порядок углов прямоугольника `NW, SW, SE, NE, NW`.
 - KML парсится как XML.
 - KML содержит ожидаемое количество `Placemark`.
+- Point-KML парсится как XML и содержит `Document/Waypoints`, `Placemark`, `Point`, `description`, `ExtendedData/comment` и общий `IconStyle/color`.
+- Point-domain нормализует дату в `dd.mm.yyyy`, координаты `X/Y` и цвет точки в формат KML `aabbggrr`.
 - Дефолтный KML не содержит цветной заливки.
 - KML поддерживает цвет и толщину линий больших и малых квадратов.
 - Заливка больших квадратов поддерживает один цвет, палитру по номерам, пользовательскую палитру и alpha-канал.
@@ -712,6 +722,7 @@ uv run --extra dev python -m compileall src tests
 - Многозонный экспорт должен оставаться zone-aware: нельзя молча преобразовывать часть ячейки через неверную зону, а смещенную ячейку на границе зоны нужно блокировать до отдельной задачи по разрезанию таких ячеек.
 - Предпросмотр карты или схемы держать отдельной вкладкой/панелью, не ломая существующий поток ввода и экспорта.
 - Если добавляется новый формат экспорта, он должен идти через отдельный сервис/модуль, а не через разрастание `MainWindow`.
+- Point-flow должен развиваться отдельно от grid-flow: новые point-сущности, writer-ы и сервисы не должны расширять `GridOptions`, `ExportMode`, текущую вкладку `Экспорт` и `.lgm.json`, пока это не станет отдельной сознательной задачей.
 
 ## Короткая памятка для Codex в новых чатах
 
