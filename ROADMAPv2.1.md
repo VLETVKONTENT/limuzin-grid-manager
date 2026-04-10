@@ -30,7 +30,8 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-10 Europe/Moscow: Пользователь вручную протестировал `v2.0.2` и подтвердил, что изменения работают; выполнены `uv lock --offline`, `uv run --offline --extra dev pytest`, `uv run --offline --extra dev python -m compileall src tests`, сборка EXE `2.0.2.0` и подготовка версии к публикации.
 - [x] 2026-04-10 Europe/Moscow: Реализован `v2.0.3`: добавлено отдельное окно `Точки из Excel` в `src/limuzin_grid_manager/ui/points_window.py` с выбором `.xlsx`, сводкой импорта, таблицей точек, блоком ошибок, общим стилем точек, выбором пути `.kml` и локальными `QSettings`; в `src/limuzin_grid_manager/ui/main_window.py` добавлено меню `Инструменты -> Точки из Excel...` с повторным открытием того же окна без внедрения point-state в grid-flow.
 - [x] 2026-04-10 Europe/Moscow: Для `v2.0.3` расширен `tests/test_ui.py`; `uv run --extra dev pytest tests\test_points.py tests\test_ui.py` прошло с результатом `15 passed`, `uv run --extra dev pytest` прошло с результатом `81 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок.
-- [ ] Реализация `v2.0.4`: безопасная запись point-KML через временный файл, отмена, полировка UX и EXE-готовность с новой Excel-зависимостью.
+- [x] 2026-04-10 Europe/Moscow: Реализован `v2.0.4`: в `src/limuzin_grid_manager/app/point_exporter.py` добавлены проверка свободного места, запись point-KML через временный файл, атомарная замена результата и очистка `.tmp` при ошибке/отмене; в `src/limuzin_grid_manager/ui/points_window.py` экспорт переведен в отдельный worker с прогрессом, кнопкой отмены и блокировкой полей на время записи; `build_exe_windows.bat` теперь явно собирает `openpyxl`.
+- [x] 2026-04-10 Europe/Moscow: Для `v2.0.4` расширены `tests/test_points.py` и `tests/test_ui.py`; `uv run --extra dev pytest tests\test_points.py tests\test_ui.py` прошло с результатом `19 passed`, `uv run --extra dev pytest` прошло с результатом `85 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок, офлайн-пайплайн пройден, собран EXE `2.0.4.0` и выполнен smoke-запуск с открытием окна `Точки из Excel` через `Ctrl+Shift+P`.
 - [ ] Подготовка `v2.1.0`: синхронизация версий, обновление документации, офлайн-проверка, сборка EXE и ручной пользовательский тест.
 
 ## Surprises & Discoveries
@@ -73,6 +74,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: Separate window хорошо ложится на текущую архитектуру, если `MainWindow` хранит одну живую ссылку и повторно поднимает уже созданный `PointsWindow`, а не пересоздает его и не расширяет grid-вкладки.
   Evidence: `tests/test_ui.py` открывает `MainWindow`, вызывает действие `Инструменты -> Точки из Excel...`, получает `PointsWindow`, загружает sample workbook и подтверждает, что список вкладок остается `Предпросмотр`, `Проверка`, `Экспорт`.
+
+- Observation: Для EXE-сценария одного runtime-зависимого `openpyxl` в `pyproject.toml` недостаточно; надежнее явно добавить и PyInstaller-сбор подмодулей и данных.
+  Evidence: после добавления `--collect-submodules openpyxl` и `--collect-data openpyxl` build log показывает `hook-openpyxl` и скрытые импорты `openpyxl.compat.*`, `openpyxl.worksheet.*`, а собранный `dist/LIMUZIN_GRID_MANAGER.exe` открывает окно `Точки из Excel` в smoke-проверке.
 
 ## Decision Log
 
@@ -148,6 +152,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Это дает отдельный point-flow внутри того же EXE, но не тащит импортированные точки, цвет и путь `.kml` в grid-состояние, `ProjectState` или `.lgm.json`, сохраняя минимальную поверхность интеграции.
   Date/Author: 2026-04-10, Codex.
 
+- Decision: Для `v2.0.4` point-export использует тот же паттерн надежности, что и grid-export: отдельный worker-поток в UI и temp-file + atomic replace в сервисе экспорта, но без внедрения point-flow в `ExportMode`.
+  Rationale: Пользователь получает знакомое поведение с прогрессом, отменой и безопасной перезаписью файла, а архитектура по-прежнему разделяет сценарии сеток и точек.
+  Date/Author: 2026-04-10, Codex.
+
 ## Outcomes & Retrospective
 
 Milestone `v2.0.1` завершен как рабочий этап roadmap. В репозитории появился минимальный, но уже проверяемый point-domain: `PointRecord`, `PointStyle`, helpers нормализации, `PointImportResult`/`PointImportError`, отдельный `point_kml` writer и `point_exporter`. Все это живет в новых `core/app`-модулях и не расширяет существующие grid-модели.
@@ -164,6 +172,10 @@ Milestone `v2.0.2` завершен как принятый этап roadmap. В
 Milestone `v2.0.3` завершен как рабочий этап roadmap. В приложении появилось отдельное окно `Точки из Excel` в `src/limuzin_grid_manager/ui/points_window.py`: оно загружает sample-first `.xlsx`, показывает сводку импорта, таблицу корректных точек, ошибки по строкам, единый стиль точек и путь итогового `.kml`. Через `QSettings` окно сохраняет только локальные удобства point-flow и не вмешивается в `ProjectState` или `.lgm.json`.
 
 Главный итог этапа - point-flow впервые стал доступен из интерфейса того же EXE без смешивания с grid-вкладками. `src/limuzin_grid_manager/ui/main_window.py` получил только меню `Инструменты -> Точки из Excel...` и удержание ссылки на окно, а offscreen-smoke тесты подтвердили открытие окна, загрузку workbook, изменение цвета и прозрачности и отсутствие регрессии в текущих вкладках `Предпросмотр`, `Проверка`, `Экспорт`. Автоматическая проверка этапа завершилась результатами `15 passed` для таргетированных point/UI-тестов, `81 passed` для полного `pytest` и успешным `compileall`.
+
+Milestone `v2.0.4` завершен как рабочий этап roadmap. Point-flow получил тот же уровень эксплуатационной надежности, что и grid-export: `src/limuzin_grid_manager/app/point_exporter.py` теперь пишет результат через временный файл в папке назначения, проверяет свободное место, не заменяет старый `.kml` при ошибке или отмене и очищает незавершенный `.tmp`. В `src/limuzin_grid_manager/ui/points_window.py` экспорт теперь выполняется в отдельном worker-потоке, показывает прогресс, позволяет отменить запись и не дает закрыть окно в середине операции.
+
+Главный итог этапа - point-flow стал EXE-ready без скрытых рисков для пользователя. Автотесты закрывают atomic write, cleanup временных файлов, UX-состояние окна и регрессию существующих сценариев; полный `pytest` теперь дает `85 passed`, офлайн-пайплайн проходит, а собранный `dist/LIMUZIN_GRID_MANAGER.exe` с версией `2.0.4.0` открывает окно `Точки из Excel` по `Ctrl+Shift+P` в smoke-проверке. После ручного пользовательского теста `v2.0.4` принята как текущая стабильная версия проекта.
 
 ## Context and Orientation
 
@@ -413,3 +425,4 @@ Revision note 2026-04-09 Europe/Moscow: roadmap обновлен после ру
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.2`; зафиксированы `openpyxl`, рабочий `import_points_from_excel()`, strict sample-first `.xlsx`, трактовка sample-координат `х-... y-...` как положительных `X/Y` и новые workbook-тесты (`11 passed`).
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после ручного теста пользователя и офлайн-релизной проверки; `v2.0.2` переведена из рабочего milestone в принятую версию, зафиксированы сборка EXE `2.0.2.0` и подготовка публикации.
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.3`; зафиксированы `PointsWindow`, меню `Инструменты -> Точки из Excel...`, локальные `QSettings` point-flow и автоматическая проверка (`15 passed`, `81 passed`, успешный `compileall`).
+Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.4`; зафиксированы temp-file + atomic replace для point-KML, worker-экспорт с прогрессом и отменой, PyInstaller flags для `openpyxl`, автоматическая проверка (`19 passed`, `85 passed`, офлайн `pytest`, офлайн `compileall`), EXE `2.0.4.0` и smoke с открытием окна `Точки из Excel` по `Ctrl+Shift+P`.

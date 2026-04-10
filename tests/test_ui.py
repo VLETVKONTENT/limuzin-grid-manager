@@ -220,3 +220,48 @@ def test_main_window_opens_points_window_and_points_window_uses_local_settings(t
         if window._points_window is not None:
             window._points_window.close()
         window.close()
+
+
+def test_points_window_running_state_disables_controls_and_shows_progress(tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+    _ = app
+    workbook_path = tmp_path / "points.xlsx"
+    _write_points_workbook(
+        workbook_path,
+        [
+            ["ФИО", "Дата", "Координаты"],
+            ["Мишарин Александр Витальевич", 46115, "х-5649764 y-6661612"],
+        ],
+    )
+
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    window = PointsWindow(settings=settings)
+
+    try:
+        window.load_excel_path(workbook_path)
+        window._last_output_path = tmp_path / "ready.kml"
+
+        window._set_export_running(True)
+
+        assert not window.progress.isHidden()
+        assert not window.cancel_button.isHidden()
+        assert not window.excel_browse_button.isEnabled()
+        assert not window.excel_load_button.isEnabled()
+        assert not window.output_browse_button.isEnabled()
+        assert not window.point_color_button.isEnabled()
+        assert not window.point_opacity.isEnabled()
+        assert not window.generate_button.isEnabled()
+
+        window._set_export_running(False)
+
+        assert window.progress.isHidden()
+        assert window.cancel_button.isHidden()
+        assert window.excel_browse_button.isEnabled()
+        assert window.excel_load_button.isEnabled()
+        assert window.output_browse_button.isEnabled()
+        assert window.point_color_button.isEnabled()
+        assert window.point_opacity.isEnabled()
+        assert window.generate_button.isEnabled()
+        assert window.open_output_folder_button.isEnabled()
+    finally:
+        window.close()

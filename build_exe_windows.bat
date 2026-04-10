@@ -18,6 +18,8 @@ uv run pyinstaller --noconfirm --clean --onefile --windowed ^
   --add-data "icon.png;." ^
   --add-data "app.manifest;." ^
   --add-data "%PROJ_DATA%;pyproj\proj_dir\share\proj" ^
+  --collect-submodules openpyxl ^
+  --collect-data openpyxl ^
   --collect-data pyproj ^
   src\limuzin_grid_manager\__main__.py
 if errorlevel 1 exit /b %errorlevel%

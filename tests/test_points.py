@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree
 
 import pytest
@@ -269,3 +270,58 @@ def test_export_points_kml_requires_records_and_writes_output(tmp_path: Path) ->
 
     assert out_path.exists()
     assert ElementTree.fromstring(out_path.read_text(encoding="utf-8")).tag == "{http://www.opengis.net/kml/2.2}kml"
+
+
+def test_export_points_kml_preserves_existing_file_and_cleans_temp_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_path = tmp_path / "points.kml"
+    out_path.write_text("stable-result", encoding="utf-8")
+
+    def broken_write(*args, **kwargs) -> None:
+        temp_path = Path(args[0])
+        temp_path.write_text("partial-result", encoding="utf-8")
+        raise RuntimeError("writer exploded")
+
+    monkeypatch.setattr("limuzin_grid_manager.app.point_exporter.write_points_kml", broken_write)
+
+    with pytest.raises(RuntimeError, match="writer exploded"):
+        export_points_kml(out_path, (_sample_record(),), PointStyle())
+
+    assert out_path.read_text(encoding="utf-8") == "stable-result"
+    assert list(tmp_path.glob(f".{out_path.name}.*.tmp")) == []
+
+
+def test_export_points_kml_preserves_existing_file_and_cleans_temp_on_cancel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_path = tmp_path / "points.kml"
+    out_path.write_text("stable-result", encoding="utf-8")
+
+    def partial_write(*args, **kwargs) -> None:
+        temp_path = Path(args[0])
+        temp_path.write_text("partial-result", encoding="utf-8")
+
+    monkeypatch.setattr("limuzin_grid_manager.app.point_exporter.write_points_kml", partial_write)
+
+    with pytest.raises(RuntimeError, match="отменен"):
+        export_points_kml(out_path, (_sample_record(),), PointStyle(), cancelled=lambda: True)
+
+    assert out_path.read_text(encoding="utf-8") == "stable-result"
+    assert list(tmp_path.glob(f".{out_path.name}.*.tmp")) == []
+
+
+def test_export_points_kml_checks_free_space_before_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_path = tmp_path / "points.kml"
+    monkeypatch.setattr(
+        "limuzin_grid_manager.app.point_exporter.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=0),
+    )
+
+    with pytest.raises(OSError, match="Недостаточно свободного места"):
+        export_points_kml(out_path, (_sample_record(),), PointStyle())

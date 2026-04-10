@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtCore import QObject, QSettings, Qt, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QColorDialog,
     QFileDialog,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -29,6 +30,7 @@ from limuzin_grid_manager.app.export_formats import default_export_directory
 from limuzin_grid_manager.app.point_exporter import export_points_kml
 from limuzin_grid_manager.app.point_import import PointImportResult, import_points_from_excel
 from limuzin_grid_manager.app.resources import resource_path
+from limuzin_grid_manager.core.export_progress import ExportCancelled
 from limuzin_grid_manager.core.points import PointStyle, normalize_point_color, normalize_point_opacity
 
 
@@ -38,6 +40,43 @@ LAST_EXCEL_PATH_KEY = "points/last_excel_path"
 LAST_EXPORT_DIR_KEY = "points/last_export_dir"
 POINT_COLOR_KEY = "points/style_color"
 POINT_OPACITY_KEY = "points/style_opacity"
+
+
+class PointsExportWorker(QObject):
+    finished = Signal(str)
+    failed = Signal(str)
+    cancelled = Signal(str)
+    progress = Signal(int, int)
+
+    def __init__(self, out_path: Path, result: PointImportResult, style: PointStyle) -> None:
+        super().__init__()
+        self._out_path = out_path
+        self._result = result
+        self._style = style
+        self._cancel_requested = False
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            export_points_kml(
+                self._out_path,
+                self._result.records,
+                self._style,
+                progress=self.progress.emit,
+                cancelled=self.is_cancel_requested,
+            )
+        except ExportCancelled as exc:
+            self.cancelled.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.finished.emit(str(self._out_path))
+
+    def cancel(self) -> None:
+        self._cancel_requested = True
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_requested
 
 
 class PointColorButton(QPushButton):
@@ -76,6 +115,9 @@ class PointsWindow(QMainWindow):
 
         self._settings = settings or QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
         self._import_result: PointImportResult | None = None
+        self._thread: QThread | None = None
+        self._worker: PointsExportWorker | None = None
+        self._last_output_path: Path | None = None
 
         self._build_ui()
         self._connect_signals()
@@ -113,6 +155,19 @@ class PointsWindow(QMainWindow):
         self.status_label.setObjectName("Status")
         self.status_label.setWordWrap(True)
         footer.addWidget(self.status_label, 1)
+
+        self.progress = QProgressBar()
+        self.progress.setMinimumWidth(220)
+        self.progress.setVisible(False)
+        footer.addWidget(self.progress)
+
+        self.cancel_button = QPushButton("Отменить")
+        self.cancel_button.setVisible(False)
+        footer.addWidget(self.cancel_button)
+
+        self.open_output_folder_button = QPushButton("Открыть папку")
+        self.open_output_folder_button.setEnabled(False)
+        footer.addWidget(self.open_output_folder_button)
 
         self.generate_button = QPushButton("Сгенерировать KML")
         footer.addWidget(self.generate_button)
@@ -213,6 +268,8 @@ class PointsWindow(QMainWindow):
         self.output_path.textChanged.connect(self._on_output_path_changed)
         self.point_opacity.valueChanged.connect(self._save_style_settings)
         self.point_color_button.colorChanged.connect(self._save_style_settings)
+        self.cancel_button.clicked.connect(self.cancel_export)
+        self.open_output_folder_button.clicked.connect(self.open_output_folder)
         self.generate_button.clicked.connect(self.generate)
 
     def _restore_settings(self) -> None:
@@ -233,6 +290,8 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def choose_excel_file(self) -> None:
+        if self._thread is not None:
+            return
         initial = self._initial_excel_path()
         selected, _ = QFileDialog.getOpenFileName(
             self,
@@ -246,6 +305,8 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def load_selected_excel(self) -> None:
+        if self._thread is not None:
+            return
         raw_path = self.excel_path.text().strip().strip('"')
         if not raw_path:
             QMessageBox.warning(self, "Точки из Excel", "Сначала укажите путь к `.xlsx`.")
@@ -253,6 +314,8 @@ class PointsWindow(QMainWindow):
         self.load_excel_path(Path(raw_path).expanduser())
 
     def load_excel_path(self, path: Path) -> None:
+        if self._thread is not None:
+            return
         workbook_path = Path(path).expanduser()
         self.excel_path.setText(str(workbook_path))
         try:
@@ -276,6 +339,8 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def choose_output_path(self) -> None:
+        if self._thread is not None:
+            return
         initial = self._initial_output_path()
         selected, _ = QFileDialog.getSaveFileName(
             self,
@@ -292,6 +357,8 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def generate(self) -> None:
+        if self._thread is not None:
+            return
         if self._import_result is None:
             QMessageBox.warning(self, "Экспорт точек", "Сначала загрузите Excel-файл.")
             return
@@ -314,25 +381,58 @@ class PointsWindow(QMainWindow):
                 self,
                 "Экспорт точек",
                 f"Файл уже существует и будет перезаписан:\n{out_path}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
 
-        try:
-            self.generate_button.setEnabled(False)
-            self.status_label.setText("Генерация point-KML...")
-            export_points_kml(out_path, self._import_result.records, self.point_style())
-        except Exception as exc:
-            self.status_label.setText("Ошибка экспорта")
-            QMessageBox.critical(self, "Экспорт точек", str(exc))
-            self._update_generate_enabled()
+        self._save_style_settings()
+        self._start_export(out_path)
+
+    def _start_export(self, out_path: Path) -> None:
+        if self._import_result is None:
             return
 
-        self._settings.setValue(LAST_EXPORT_DIR_KEY, str(out_path.parent))
-        self._save_style_settings()
-        self.status_label.setText(f"Готово: {out_path.name}")
-        self._update_generate_enabled()
-        QMessageBox.information(self, "Экспорт точек", f"Файл создан:\n{out_path}")
+        self._thread = QThread(self)
+        self._worker = PointsExportWorker(out_path, self._import_result, self.point_style())
+        self._worker.moveToThread(self._thread)
+
+        self._thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self._on_export_finished)
+        self._worker.failed.connect(self._on_export_failed)
+        self._worker.cancelled.connect(self._on_export_cancelled)
+        self._worker.progress.connect(self._on_export_progress)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.failed.connect(self._thread.quit)
+        self._worker.cancelled.connect(self._thread.quit)
+        self._thread.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._on_export_thread_finished)
+
+        self._set_export_running(True)
+        self._thread.start()
+
+    def _set_export_running(self, running: bool) -> None:
+        for widget in (
+            self.excel_path,
+            self.excel_browse_button,
+            self.excel_load_button,
+            self.point_color_button,
+            self.point_opacity,
+            self.output_path,
+            self.output_browse_button,
+        ):
+            widget.setEnabled(not running)
+        self.generate_button.setEnabled(not running and self._can_generate())
+        self.progress.setVisible(running)
+        if running:
+            self.progress.setRange(0, 0)
+            self.progress.setValue(0)
+            self.status_label.setText("Генерация point-KML...")
+        self.cancel_button.setVisible(running)
+        self.cancel_button.setEnabled(running)
+        self.open_output_folder_button.setEnabled(not running and self._last_output_path is not None)
 
     def _update_import_view(self, result: PointImportResult | None, import_error: str | None = None) -> None:
         self.preview_table.setRowCount(0)
@@ -367,7 +467,10 @@ class PointsWindow(QMainWindow):
         self.preview_table.resizeRowsToContents()
 
     def _update_generate_enabled(self) -> None:
-        self.generate_button.setEnabled(
+        self.generate_button.setEnabled(self._thread is None and self._can_generate())
+
+    def _can_generate(self) -> bool:
+        return (
             self._import_result is not None
             and self._import_result.is_exportable
             and bool(self.output_path.text().strip())
@@ -413,6 +516,60 @@ class PointsWindow(QMainWindow):
         self._settings.setValue(POINT_COLOR_KEY, style.color)
         self._settings.setValue(POINT_OPACITY_KEY, style.opacity)
         self._settings.sync()
+
+    @Slot(int, int)
+    def _on_export_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(done)
+            self.status_label.setText(f"Генерация point-KML: {done} из {total}")
+
+    @Slot()
+    def cancel_export(self) -> None:
+        if self._worker is None:
+            return
+        self._worker.cancel()
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("Отмена point-KML...")
+
+    @Slot(str)
+    def _on_export_finished(self, path_value: str) -> None:
+        self._last_output_path = Path(path_value)
+        self._settings.setValue(LAST_EXPORT_DIR_KEY, str(self._last_output_path.parent))
+        self._settings.sync()
+        self.status_label.setText(f"Готово: {self._last_output_path.name}")
+        self.open_output_folder_button.setEnabled(True)
+        QMessageBox.information(self, "Экспорт точек", f"Файл создан:\n{path_value}")
+
+    @Slot(str)
+    def _on_export_failed(self, message: str) -> None:
+        self.status_label.setText("Ошибка экспорта")
+        QMessageBox.critical(self, "Экспорт точек", message)
+
+    @Slot(str)
+    def _on_export_cancelled(self, message: str) -> None:
+        self.status_label.setText(message)
+        QMessageBox.information(self, "Экспорт отменен", "Экспорт отменен. Незавершенный временный файл удален.")
+
+    @Slot()
+    def _on_export_thread_finished(self) -> None:
+        self._thread = None
+        self._worker = None
+        self._set_export_running(False)
+        self._update_generate_enabled()
+
+    @Slot()
+    def open_output_folder(self) -> None:
+        if self._last_output_path is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_output_path.parent)))
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self._thread is not None:
+            QMessageBox.warning(self, "Экспорт точек", "Идет экспорт. Дождитесь завершения или нажмите «Отменить».")
+            event.ignore()
+            return
+        super().closeEvent(event)
 
 
 def _format_import_errors(result: PointImportResult) -> str:
