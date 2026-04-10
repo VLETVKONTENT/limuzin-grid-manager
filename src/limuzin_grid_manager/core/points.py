@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from math import isfinite
 
 from limuzin_grid_manager.core.models import normalize_opacity_percent, normalize_rgb_color
 from limuzin_grid_manager.core.zones import validate_gk_zone
-
 
 _EXCEL_EPOCH = datetime(1899, 12, 30)
 _COORDINATE_TRANSLATION = str.maketrans(
@@ -31,6 +31,9 @@ _COORDINATE_TRANSLATION = str.maketrans(
         "}": " ",
         "\u00a0": " ",
     }
+)
+_LABELED_COORDINATE_PATTERN = re.compile(
+    r"^\s*[xXхХ]\s*[-:=]?\s*(\d+)\s*[,;]?\s*[yYуУ]\s*[-:=]?\s*(\d+)\s*$"
 )
 
 
@@ -140,7 +143,13 @@ def normalize_point_date(value: object) -> str:
 def parse_point_coordinates(value: str) -> tuple[int, int]:
     text = str(value).strip()
     if not text:
-        raise ValueError("Координаты точки не заполнены.")
+        raise ValueError(
+            "Координаты точки не заполнены."
+        )
+
+    labeled_match = _LABELED_COORDINATE_PATTERN.fullmatch(text)
+    if labeled_match:
+        return int(labeled_match.group(1)), int(labeled_match.group(2))
 
     tokens = text.translate(_COORDINATE_TRANSLATION).split()
     if len(tokens) != 2:
@@ -154,8 +163,6 @@ def parse_point_coordinates(value: str) -> tuple[int, int]:
     except ValueError as exc:
         raise ValueError("Координаты точки должны быть целыми числами X и Y.") from exc
     return x, y
-
-
 def _looks_like_number(value: str) -> bool:
     if value.count(".") > 1:
         return False

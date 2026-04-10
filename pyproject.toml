@@ -1,11 +1,12 @@
 [project]
 name = "limuzin-grid-manager"
-version = "2.0.1"
+version = "2.0.2"
 description = "Windows KML, SVG, GeoJSON and CSV grid generator using SK-42 / Pulkovo-42 Gauss-Kruger coordinates."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
+    "openpyxl>=3.1",
     "PySide6>=6.8",
     "pyproj>=3.6",
 ]

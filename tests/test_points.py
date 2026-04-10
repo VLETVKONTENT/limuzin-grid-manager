@@ -5,9 +5,14 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+from openpyxl import Workbook
 
 from limuzin_grid_manager.app.point_exporter import export_points_kml
-from limuzin_grid_manager.app.point_import import PointImportError, PointImportResult
+from limuzin_grid_manager.app.point_import import (
+    PointImportError,
+    PointImportResult,
+    import_points_from_excel,
+)
 from limuzin_grid_manager.core.point_kml import write_points_kml
 from limuzin_grid_manager.core.points import (
     PointRecord,
@@ -23,8 +28,8 @@ def _sample_record(
     name: str = "Мишарин Александр Витальевич",
     source_date: str = "46115",
     display_date: object = "03.04.2026",
-    x: int = -5_649_764,
-    y: int = -6_661_612,
+    x: int = 5_649_764,
+    y: int = 6_661_612,
     zone: int = 6,
     lon: float = 35.29845459878114,
     lat: float = 50.955512683199146,
@@ -41,6 +46,19 @@ def _sample_record(
         lat=lat,
         source_row=source_row,
     )
+
+
+def _write_workbook(path: Path, sheets: list[tuple[str, list[list[object]]]]) -> None:
+    workbook = Workbook()
+    first_sheet = True
+    for sheet_name, rows in sheets:
+        worksheet = workbook.active if first_sheet else workbook.create_sheet()
+        first_sheet = False
+        worksheet.title = sheet_name
+        for row in rows:
+            worksheet.append(row)
+    workbook.save(path)
+    workbook.close()
 
 
 def test_point_record_validates_and_normalizes_fields() -> None:
@@ -67,7 +85,7 @@ def test_point_style_and_helpers_normalize_color_opacity_and_date() -> None:
 
 
 def test_parse_point_coordinates_extracts_two_integers() -> None:
-    assert parse_point_coordinates("х-5649764 y-6661612") == (-5_649_764, -6_661_612)
+    assert parse_point_coordinates("х-5649764 y-6661612") == (5_649_764, 6_661_612)
     assert parse_point_coordinates("x=5649800, y=6661934") == (5_649_800, 6_661_934)
 
     with pytest.raises(ValueError, match="ровно два"):
@@ -91,14 +109,114 @@ def test_point_import_result_summary_blocks_export_on_errors() -> None:
     assert "Ошибок: 1. Экспорт заблокирован." in result.summary
 
 
+def test_import_points_from_excel_reads_first_sheet_with_data_and_normalizes_rows(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "points.xlsx"
+    _write_workbook(
+        workbook_path,
+        [
+            ("Пустой", []),
+            (
+                "Лист1",
+                [
+                    ["ФИО", "Дата", "Координаты"],
+                    ["Мишарин Александр Витальевич", 46115, "х-5649764 y-6661612"],
+                    ["Педьков Михаил Иванович", "03.04.2026", "х-5649800 y-6661934"],
+                    ["Третья точка", date(2026, 4, 3), "x=-5649900 y=-6661500"],
+                ],
+            ),
+        ],
+    )
+
+    result = import_points_from_excel(workbook_path)
+
+    assert result.sheet_name == "Лист1"
+    assert result.total_rows == 3
+    assert result.errors == ()
+    assert result.is_exportable
+    assert [record.display_date for record in result.records] == ["03.04.2026", "03.04.2026", "03.04.2026"]
+    assert result.records[0].source_date == "46115"
+    assert result.records[0].name == "Мишарин Александр Витальевич"
+    assert result.records[0].x == 5_649_764
+    assert result.records[0].y == 6_661_612
+    assert result.records[0].zone == 6
+    assert result.records[0].source_row == 2
+    assert result.records[0].lon == pytest.approx(35.29845459878114, abs=1e-7)
+    assert result.records[0].lat == pytest.approx(50.955512683199146, abs=1e-7)
+
+
+def test_import_points_from_excel_collects_row_errors_and_blocks_export(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "invalid_points.xlsx"
+    _write_workbook(
+        workbook_path,
+        [
+            (
+                "Лист1",
+                [
+                    ["ФИО", "Дата", "Координаты"],
+                    ["Валидная точка", 46115, "x=-5649764 y=-6661612"],
+                    ["", 46115, "x=-5649764 y=-6661612"],
+                    ["Без даты", None, "x=-5649764 y=-6661612"],
+                    ["Без координат", 46115, None],
+                    ["Плохая дата", "2026-04-03", "x=-5649764 y=-6661612"],
+                    ["Плохие координаты", 46115, "x=12 y=34 z=56"],
+                    ["Плохая зона", 46115, "x=12 y=34000000"],
+                    ["Лишняя колонка", 46115, "x=-5649764 y=-6661612", "лишнее"],
+                ],
+            ),
+        ],
+    )
+
+    result = import_points_from_excel(workbook_path)
+
+    assert result.total_rows == 8
+    assert len(result.records) == 1
+    assert len(result.errors) == 7
+    assert not result.is_exportable
+    assert {error.source_row for error in result.errors} == {3, 4, 5, 6, 7, 8, 9}
+    assert any("ФИО" in error.message for error in result.errors)
+    assert any("Дата" in error.message for error in result.errors)
+    assert any("Координаты" in error.message for error in result.errors)
+    assert any("dd.mm.yyyy" in error.message for error in result.errors)
+    assert any("ровно два" in error.message for error in result.errors)
+    assert any("зона" in error.message for error in result.errors)
+    assert any("только колонки" in error.message for error in result.errors)
+
+
+def test_import_points_from_excel_requires_strict_header(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "wrong_header.xlsx"
+    _write_workbook(
+        workbook_path,
+        [
+            (
+                "Лист1",
+                [
+                    ["Имя", "Дата", "Координаты"],
+                    ["Точка", 46115, "x=-5649764 y=-6661612"],
+                ],
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Фио \\| Дата \\| Координаты"):
+        import_points_from_excel(workbook_path)
+
+
+def test_import_points_from_excel_requires_xlsx_path(tmp_path: Path) -> None:
+    fake_path = tmp_path / "points.csv"
+    fake_path.write_text("name;date;coords", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="только файлы \\.xlsx"):
+        import_points_from_excel(fake_path)
+
+
 def test_write_points_kml_creates_waypoints_document_with_point_placemarks(tmp_path: Path) -> None:
     out_path = tmp_path / "points.kml"
     records = (
         _sample_record(),
         _sample_record(
             name="Педьков Михаил Иванович",
-            x=-5_649_800,
-            y=-6_661_934,
+            x=5_649_800,
+            y=6_661_934,
             lon=35.29800696743792,
             lat=50.95487717694347,
             source_row=3,
