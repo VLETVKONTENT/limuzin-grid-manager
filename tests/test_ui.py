@@ -203,6 +203,9 @@ def test_main_window_opens_points_window_and_points_window_uses_local_settings(t
         points_window.point_opacity.setValue(55)
 
         assert points_window.preview_table.rowCount() == 2
+        assert points_window.preview_splitter.count() == 2
+        assert points_window.preview_table.minimumHeight() >= 260
+        assert points_window.error_text.minimumHeight() >= 180
         assert points_window.preview_table.item(0, 0).text() == "2"
         assert points_window.preview_table.item(0, 1).text() == "Мишарин Александр Витальевич"
         assert "Корректных точек: 2." in points_window.summary_text.toPlainText()

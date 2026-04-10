@@ -5,7 +5,7 @@
 ## Репозиторий
 
 - GitHub: https://github.com/VLETVKONTENT/limuzin-grid-manager
-- Видимость: готовится к публичному репозиторию; последняя принятая стабильная версия `v2.0.4`.
+- Видимость: готовится к публичному репозиторию; последняя принятая стабильная версия `v2.0.5`.
 - Основная ветка: `main`.
 - Теги версий: `vX.Y.Z`, например `v0.1.0`.
 - EXE-файлы не хранятся напрямую в git-истории. Готовый `LIMUZIN_GRID_MANAGER.exe` прикрепляется к GitHub Release как asset.
@@ -106,8 +106,8 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 
 ## Текущий статус
 
-- Последняя подготовленная и принятая версия: `v2.0.4`.
-- Последний опубликованный release после публикации: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.0.4
-- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.0.3
+- Последняя подготовленная и принятая версия: `v2.0.5`.
+- Последний опубликованный release после публикации: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.0.5
+- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.0.4
 - Основной источник технического контекста: `GRIDBASE.md`.
 - История версий: `versions/GRIDVERSIONS.md`.

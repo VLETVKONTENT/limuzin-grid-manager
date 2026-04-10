@@ -46,6 +46,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - Начиная с `v2.0.2`, point-flow умеет читать sample-first `.xlsx` через `openpyxl`: первый лист с данными, строгий заголовок `ФИО | Дата | Координаты`, построчная валидация и преобразование `X/Y -> zone from Y -> pyproj(y, x) -> lon/lat`.
 - Начиная с `v2.0.3`, внутри приложения есть отдельное окно `Точки из Excel`: оно открывается из меню `Инструменты`, живет отдельно от grid-flow, показывает сводку импорта, таблицу точек и ошибки по строкам, позволяет настроить общий цвет и прозрачность точек и сохранить point-KML без вмешательства в вкладки сетки и `.lgm.json`.
 - Начиная с `v2.0.4`, point-flow доведен до release-ready уровня: `point_exporter` проверяет свободное место, пишет point-KML через временный файл и атомарно заменяет итоговый `.kml`, а окно `Точки из Excel` экспортирует в отдельном worker-потоке с прогрессом, отменой и блокировкой элементов на время записи.
+- Начиная с `v2.0.5`, блок `Предварительный просмотр и ошибки` в окне `Точки из Excel` разделен вертикальным `QSplitter`: preview-таблица и панель ошибок имеют увеличенные минимальные размеры и могут вручную перераспределять высоту, поэтому область не схлопывается до одной видимой строки.
 
 Важное правило KML-стиля:
 
@@ -97,7 +98,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `src/limuzin_grid_manager/ui/main_window.py` — интерфейс PySide6, вкладки grid-flow и точка входа в отдельное окно `Точки из Excel` через меню `Инструменты`.
 - `src/limuzin_grid_manager/ui/themes.py` — темы интерфейса, QSS и палитры предпросмотра.
 - `src/limuzin_grid_manager/ui/preview.py` — 2D-предпросмотр сетки, нумерации, цветов, масштабирование и перемещение.
-- `src/limuzin_grid_manager/ui/points_window.py` — отдельное окно `Точки из Excel`: загрузка `.xlsx`, сводка импорта, preview-таблица, ошибки по строкам, настройки point-style и экспорт point-KML.
+- `src/limuzin_grid_manager/ui/points_window.py` — отдельное окно `Точки из Excel`: загрузка `.xlsx`, сводка импорта, preview-таблица, панель ошибок в вертикальном `QSplitter`, настройки point-style и экспорт point-KML.
 
 Тесты:
 
@@ -633,7 +634,7 @@ layer;zone;big_number;big_name;small_number;x_top;x_bottom;y_left;y_right;center
 - `PySide6`
 - `pyproj`
 
-Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Для `v2.0.3` подтверждены offscreen/UI-тесты с отдельным окном точек. Начиная с `v2.0.4`, `build_exe_windows.bat` явно собирает `openpyxl` через `--collect-submodules openpyxl` и `--collect-data openpyxl`, а point-flow прошел офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall`, сборку `dist/LIMUZIN_GRID_MANAGER.exe` и smoke с открытием окна `Точки из Excel`.
+Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Для `v2.0.3` подтверждены offscreen/UI-тесты с отдельным окном точек. Начиная с `v2.0.4`, `build_exe_windows.bat` явно собирает `openpyxl` через `--collect-submodules openpyxl` и `--collect-data openpyxl`, а point-flow прошел офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall`, сборку `dist/LIMUZIN_GRID_MANAGER.exe` и smoke с открытием окна `Точки из Excel`. Для `v2.0.5` UI-smoke дополнительно фиксирует новый вертикальный `QSplitter` и минимальные размеры preview/error-панелей в `PointsWindow`.
 
 Dev-зависимости:
 

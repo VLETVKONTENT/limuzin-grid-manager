@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -215,6 +216,10 @@ class PointsWindow(QMainWindow):
         layout = QVBoxLayout(group)
         layout.setSpacing(10)
 
+        table_label = QLabel("Preview table")
+        table_label.setObjectName("Hint")
+        layout.addWidget(table_label)
+
         self.preview_table = QTableWidget(0, 8, self)
         self.preview_table.setHorizontalHeaderLabels(["Строка", "ФИО", "Дата", "X", "Y", "Зона", "Lon", "Lat"])
         self.preview_table.setAlternatingRowColors(True)
@@ -222,16 +227,34 @@ class PointsWindow(QMainWindow):
         self.preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.preview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.preview_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.preview_table.setMinimumHeight(260)
         self.preview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for column in range(2, 8):
             self.preview_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        layout.addWidget(self.preview_table, 1)
+        error_panel = QWidget(self)
+        error_layout = QVBoxLayout(error_panel)
+        error_layout.setContentsMargins(0, 0, 0, 0)
+        error_layout.setSpacing(6)
+
+        error_label = QLabel("Import errors and hints")
+        error_label.setObjectName("Hint")
+        error_layout.addWidget(error_label)
 
         self.error_text = QTextEdit()
         self.error_text.setReadOnly(True)
-        self.error_text.setMinimumHeight(120)
-        layout.addWidget(self.error_text)
+        self.error_text.setMinimumHeight(180)
+        self.error_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        error_layout.addWidget(self.error_text, 1)
+
+        self.preview_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.preview_splitter.setChildrenCollapsible(False)
+        self.preview_splitter.addWidget(self.preview_table)
+        self.preview_splitter.addWidget(error_panel)
+        self.preview_splitter.setStretchFactor(0, 3)
+        self.preview_splitter.setStretchFactor(1, 2)
+        self.preview_splitter.setSizes([420, 220])
+        layout.addWidget(self.preview_splitter, 1)
         return group
 
     def _build_export_group(self) -> QGroupBox:
