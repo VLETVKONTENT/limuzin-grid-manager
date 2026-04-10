@@ -4,7 +4,7 @@
 
 ## Назначение
 
-LIMUZIN GRID MANAGER — Windows-приложение для генерации KML-сеток для AlpineQuest.
+LIMUZIN GRID MANAGER - Windows-приложение для генерации сеток и point-KML для AlpineQuest.
 
 Приложение строит сетку по двум точкам:
 
@@ -29,6 +29,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - Один общий `.svg` с метрическим `viewBox`, слоями, подписями и стилями из `KmlStyle`.
 - Один общий `.geojson` как `FeatureCollection` с полигонами WGS84 и свойствами ячеек.
 - Один общий `.csv` в UTF-8 with BOM с разделителем `;`, границами СК-42 и центрами WGS84.
+- Отдельный point-KML из окна `Точки из Excel`: sample-first `.xlsx`, список `Placemark`/`Point`, общий `IconStyle/color`, фоновая запись с прогрессом, отменой и атомарной заменой результата.
 - Начиная с `v0.6.0`, настройки экспорта вынесены в отдельную вкладку `Экспорт`: формат, папка, имя файла и сводка перед запуском.
 - Начиная с `v0.7.0`, рабочее состояние можно сохранять в `.lgm.json`: координаты, настройки сетки, имена квадратов, KML-стиль и настройки экспорта.
 - Начиная с `v0.8.0`, экспорт защищен для крупных областей: есть предупреждения и лимит по количеству KML-объектов, оценка размера результата, проверка свободного места, отмена экспорта и атомарная запись через временный файл.
@@ -84,11 +85,13 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `src/limuzin_grid_manager/core/models.py` — dataclass-модели и enum-режимы.
 - `src/limuzin_grid_manager/core/crs.py` — преобразование СК-42 / Гаусс-Крюгер -> WGS84.
 - `src/limuzin_grid_manager/core/points.py` — point-domain: `PointRecord`, `PointStyle`, нормализация даты, координат, цвета и KML-кодирования цвета.
-- `src/limuzin_grid_manager/core/point_kml.py` — отдельная запись point-KML `Placemark`/`Point` с `IconStyle/color`, `description` и `ExtendedData/comment`.
-- `src/limuzin_grid_manager/core/zones.py` — определение зон Гаусса-Крюгера, проверка `1..32` и разбиение `Bounds` на `ZoneSegment`.
-- `src/limuzin_grid_manager/core/geometry.py` — нормализация границ, округление, сетка, змейка.
-- `src/limuzin_grid_manager/core/export_cells.py` — общий обход экспортируемых ячеек, номера больших квадратов, номера `100x100` и заливка больших квадратов для разных writer-модулей.
-- `src/limuzin_grid_manager/core/export_progress.py` — общий прогресс экспорта и исключение отмены.
+- `src/limuzin_grid_manager/core/point_kml.py` - отдельная запись point-KML `Placemark`/`Point` с `IconStyle/color`, `description` и `ExtendedData/comment`.
+- `src/limuzin_grid_manager/core/zones.py` - определение зон Гаусса-Крюгера, проверка `1..32` и разбиение `Bounds` на `ZoneSegment`.
+- `src/limuzin_grid_manager/core/geometry.py` - нормализация границ, округление, сетка, змейка.
+- `src/limuzin_grid_manager/core/export_cells.py` - общий обход экспортируемых ячеек, номера больших квадратов, номера `100x100` и заливка больших квадратов для разных writer-модулей.
+- `src/limuzin_grid_manager/core/export_progress.py` - общий прогресс экспорта и исключение отмены.
+
+Граница между grid-flow и point-flow остается жесткой. `GridOptions`, `ExportMode`, `ProjectState`, `.lgm.json`, вкладки `Предпросмотр` / `Проверка` / `Экспорт` и grid-writer-модули продолжают отвечать только за прямоугольные сетки. Excel-импорт точек и point-KML живут в отдельных `point_*` модулях и отдельном окне `Точки из Excel`, поэтому развитие одного сценария не должно ломать другой.
 - `src/limuzin_grid_manager/core/numbering.py` — схемы нумерации малых квадратов `100x100`.
 - `src/limuzin_grid_manager/core/stats.py` — расчет статистики, оценок размера, предупреждений и ошибок перед экспортом.
 - `src/limuzin_grid_manager/core/kml.py` — потоковая запись KML и ZIP, точный прогресс по KML-объектам и проверка отмены.
@@ -634,7 +637,7 @@ layer;zone;big_number;big_name;small_number;x_top;x_bottom;y_left;y_right;center
 - `PySide6`
 - `pyproj`
 
-Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Для `v2.0.3` подтверждены offscreen/UI-тесты с отдельным окном точек. Начиная с `v2.0.4`, `build_exe_windows.bat` явно собирает `openpyxl` через `--collect-submodules openpyxl` и `--collect-data openpyxl`, а point-flow прошел офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall`, сборку `dist/LIMUZIN_GRID_MANAGER.exe` и smoke с открытием окна `Точки из Excel`. Для `v2.0.5` UI-smoke дополнительно фиксирует новый вертикальный `QSplitter` и минимальные размеры preview/error-панелей в `PointsWindow`.
+Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Для `v2.0.3` подтверждены offscreen/UI-тесты с отдельным окном точек. Начиная с `v2.0.4`, `build_exe_windows.bat` явно собирает `openpyxl` через `--collect-submodules openpyxl` и `--collect-data openpyxl`, а point-flow прошел офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall`, сборку `dist/LIMUZIN_GRID_MANAGER.exe` и smoke с открытием окна `Точки из Excel`. Для `v2.0.5` UI-smoke дополнительно фиксирует новый вертикальный `QSplitter` и минимальные размеры preview/error-панелей в `PointsWindow`. Для подготовки `v2.1.0` синхронизированы версии приложения и EXE-ресурсов, обновлены release-документы и повторно выполняется полный офлайн-пайплайн перед ручной пользовательской приемкой.
 
 Dev-зависимости:
 

@@ -32,7 +32,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-10 Europe/Moscow: Для `v2.0.3` расширен `tests/test_ui.py`; `uv run --extra dev pytest tests\test_points.py tests\test_ui.py` прошло с результатом `15 passed`, `uv run --extra dev pytest` прошло с результатом `81 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок.
 - [x] 2026-04-10 Europe/Moscow: Реализован `v2.0.4`: в `src/limuzin_grid_manager/app/point_exporter.py` добавлены проверка свободного места, запись point-KML через временный файл, атомарная замена результата и очистка `.tmp` при ошибке/отмене; в `src/limuzin_grid_manager/ui/points_window.py` экспорт переведен в отдельный worker с прогрессом, кнопкой отмены и блокировкой полей на время записи; `build_exe_windows.bat` теперь явно собирает `openpyxl`.
 - [x] 2026-04-10 Europe/Moscow: Для `v2.0.4` расширены `tests/test_points.py` и `tests/test_ui.py`; `uv run --extra dev pytest tests\test_points.py tests\test_ui.py` прошло с результатом `19 passed`, `uv run --extra dev pytest` прошло с результатом `85 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок, офлайн-пайплайн пройден, собран EXE `2.0.4.0` и выполнен smoke-запуск с открытием окна `Точки из Excel` через `Ctrl+Shift+P`.
-- [ ] Подготовка `v2.1.0`: синхронизация версий, обновление документации, офлайн-проверка, сборка EXE и ручной пользовательский тест.
+- [x] 2026-04-10 Europe/Moscow: Реализован и принят `v2.0.5`: блок `Предварительный просмотр и ошибки` в `PointsWindow` переведен на вертикальный `QSplitter`, preview/error-панели получили увеличенные минимальные размеры, собран EXE `2.0.5.0`, а пользователь подтвердил исправление ручным тестом.
+- [x] 2026-04-10 Europe/Moscow: Для подготовки `v2.1.0` синхронизированы версии в `pyproject.toml`, `src/limuzin_grid_manager/__init__.py` и `version_info.txt`, обновлены `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `GITHUB.md`, `versions/GRIDVERSIONS.md`, создан `versions/v2.1.0.md`, а `ROADMAPv2.1.md` переведен в актуальное состояние living-документа.
+- [x] 2026-04-10 Europe/Moscow: Для `v2.1.0` пройден релизный офлайн-пайплайн: `uv lock --offline` обновил пакет до `v2.1.0`, `uv run --offline --extra dev pytest` завершился результатом `85 passed`, `uv run --offline --extra dev python -m compileall src tests` прошел без ошибок, `$env:UV_OFFLINE='1'; .\build_exe_windows.bat` собрал `dist/LIMUZIN_GRID_MANAGER.exe`, а smoke-запуск подтвердил `FileVersion=2.1.0.0`.
+- [x] 2026-04-10 Europe/Moscow: Пользователь вручную протестировал `v2.1.0` и подтвердил, что внесенные изменения работают; milestone `v2.1.0` принят как текущая стабильная версия проекта и может быть передан в commit/tag/release.
 
 ## Surprises & Discoveries
 
@@ -83,6 +86,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - Decision: Целевой крупный стабильный релиз этого roadmap - `v2.1.0`, но промежуточные patch-версии `v2.0.x` могут отдельно фиксироваться как принятые стабильные релизы после ручного теста пользователя и офлайн-релизной проверки.
   Rationale: Пользователь хочет пошаговый путь от текущей стабильной `v2.0.0` к следующей стабильной версии, а patch-версии подходят для инкрементального внедрения новой функции без обещания стабильности на каждом промежуточном шаге.
   Date/Author: 2026-04-09, Codex.
+
+- Decision: Версия кода и EXE-ресурсов поднимается до `v2.1.0` на этапе release preparation, а после подтвержденного ручного теста эта же версия переводится в текущую принятую стабильную без дополнительного bump.
+  Rationale: Это позволяет честно подготовить артефакты и документацию под следующий стабильный релиз, не нарушая правило о commit/push/tag/release только после ручного теста и явного подтверждения пользователя; после подтверждения пользователя отдельная patch-версия уже не нужна.
+  Date/Author: 2026-04-10, Codex.
 
 - Decision: Стабильная `v2.1.0` поддерживает только `.xlsx` и только sample-first шаблон `ФИО | Дата | Координаты`.
   Rationale: Это покрывает реальную пользовательскую задачу и позволяет сделать надежную реализацию без преждевременного ухода в мастер сопоставления колонок, `.xls` или произвольные табличные схемы.
@@ -157,6 +164,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Date/Author: 2026-04-10, Codex.
 
 ## Outcomes & Retrospective
+
+Milestone `v2.1.0` перешел в стадию release preparation. Версия приложения синхронизирована до `2.1.0`, обновлены release-документы (`README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `GITHUB.md`, `versions/GRIDVERSIONS.md`, `versions/v2.1.0.md`), а roadmap зафиксировал фактический путь через промежуточную принятую версию `v2.0.5`. На этом шаге point-flow уже собран как самостоятельный пользовательский сценарий внутри того же EXE: sample-first `.xlsx`, отдельное окно `Точки из Excel`, общий стиль точек, point-KML, фоновый экспорт, отмена, атомарная запись и UX-правки preview/error-панелей.
+
+Офлайн-релизная проверка для `v2.1.0` выполнена полностью: `uv lock --offline`, офлайн `pytest` (`85 passed`), офлайн `compileall`, сборка `dist/LIMUZIN_GRID_MANAGER.exe` и smoke-запуск с подтвержденной версией `2.1.0.0`. Финальная ручная пользовательская приемка тоже завершена: пользователь подтвердил, что изменения работают. Поэтому `v2.1.0` переводится из подготовленной рабочей версии в текущую принятую стабильную версию проекта и готова к commit/tag/release.
 
 Milestone `v2.0.1` завершен как рабочий этап roadmap. В репозитории появился минимальный, но уже проверяемый point-domain: `PointRecord`, `PointStyle`, helpers нормализации, `PointImportResult`/`PointImportError`, отдельный `point_kml` writer и `point_exporter`. Все это живет в новых `core/app`-модулях и не расширяет существующие grid-модели.
 
@@ -426,3 +437,4 @@ Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после ре
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после ручного теста пользователя и офлайн-релизной проверки; `v2.0.2` переведена из рабочего milestone в принятую версию, зафиксированы сборка EXE `2.0.2.0` и подготовка публикации.
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.3`; зафиксированы `PointsWindow`, меню `Инструменты -> Точки из Excel...`, локальные `QSettings` point-flow и автоматическая проверка (`15 passed`, `81 passed`, успешный `compileall`).
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.4`; зафиксированы temp-file + atomic replace для point-KML, worker-экспорт с прогрессом и отменой, PyInstaller flags для `openpyxl`, автоматическая проверка (`19 passed`, `85 passed`, офлайн `pytest`, офлайн `compileall`), EXE `2.0.4.0` и smoke с открытием окна `Точки из Excel` по `Ctrl+Shift+P`.
+Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после ручной пользовательской приемки `v2.1.0`; milestone переведен из release preparation в принятую стабильную версию, зафиксированы финальные статусы в `GRIDVERSIONS.md`, release notes и документации, после чего версия готова к commit/tag/release и публикации в GitHub.
