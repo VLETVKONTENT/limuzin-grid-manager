@@ -28,7 +28,8 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 - [x] 2026-04-10 Europe/Moscow: Реализован `v2.0.2`: в `pyproject.toml` добавлен `openpyxl`, в `src/limuzin_grid_manager/app/point_import.py` реализован `import_points_from_excel()` с поиском первого листа с данными, strict sample-first заголовком `ФИО | Дата | Координаты`, построчной валидацией и преобразованием `X/Y -> zone from Y -> pyproj(y, x) -> lon/lat`.
 - [x] 2026-04-10 Europe/Moscow: Для `v2.0.2` расширен `tests/test_points.py`; `uv run --extra dev pytest tests\test_points.py` прошло с результатом `11 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок.
 - [x] 2026-04-10 Europe/Moscow: Пользователь вручную протестировал `v2.0.2` и подтвердил, что изменения работают; выполнены `uv lock --offline`, `uv run --offline --extra dev pytest`, `uv run --offline --extra dev python -m compileall src tests`, сборка EXE `2.0.2.0` и подготовка версии к публикации.
-- [ ] Реализация `v2.0.3`: отдельное окно `Точки из Excel` внутри того же приложения и его интеграция через меню `Инструменты`.
+- [x] 2026-04-10 Europe/Moscow: Реализован `v2.0.3`: добавлено отдельное окно `Точки из Excel` в `src/limuzin_grid_manager/ui/points_window.py` с выбором `.xlsx`, сводкой импорта, таблицей точек, блоком ошибок, общим стилем точек, выбором пути `.kml` и локальными `QSettings`; в `src/limuzin_grid_manager/ui/main_window.py` добавлено меню `Инструменты -> Точки из Excel...` с повторным открытием того же окна без внедрения point-state в grid-flow.
+- [x] 2026-04-10 Europe/Moscow: Для `v2.0.3` расширен `tests/test_ui.py`; `uv run --extra dev pytest tests\test_points.py tests\test_ui.py` прошло с результатом `15 passed`, `uv run --extra dev pytest` прошло с результатом `81 passed`, `uv run --extra dev python -m compileall src tests` завершился без ошибок.
 - [ ] Реализация `v2.0.4`: безопасная запись point-KML через временный файл, отмена, полировка UX и EXE-готовность с новой Excel-зависимостью.
 - [ ] Подготовка `v2.1.0`: синхронизация версий, обновление документации, офлайн-проверка, сборка EXE и ручной пользовательский тест.
 
@@ -69,6 +70,9 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 - Observation: Точное `lon/lat` из `pyproj` может немного отличаться в последних знаках от вручную зафиксированного эталона, поэтому для milestone `v2.0.2` нужна проверка с разумным tolerance, а не побайтное сравнение float-значений.
   Evidence: `pytest.approx(..., abs=1e-7)` покрывает расхождение между sample-значением `35.29845459878114,50.955512683199146` и расчетом текущей сборки `35.29845459800664,50.95551264506717`, не меняя географический смысл точки.
+
+- Observation: Separate window хорошо ложится на текущую архитектуру, если `MainWindow` хранит одну живую ссылку и повторно поднимает уже созданный `PointsWindow`, а не пересоздает его и не расширяет grid-вкладки.
+  Evidence: `tests/test_ui.py` открывает `MainWindow`, вызывает действие `Инструменты -> Точки из Excel...`, получает `PointsWindow`, загружает sample workbook и подтверждает, что список вкладок остается `Предпросмотр`, `Проверка`, `Экспорт`.
 
 ## Decision Log
 
@@ -140,6 +144,10 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
   Rationale: Для новой Excel-зависимости лучше сразу зафиксировать безопасную EXE-стратегию, чем откладывать возможную проблему импорта модулей до финального smoke-теста релиза.
   Date/Author: 2026-04-09, Codex.
 
+- Decision: Для `v2.0.3` окно точек остается самостоятельным top-level окном с собственными локальными `QSettings`, а `MainWindow` только открывает его через меню и хранит ссылку для повторного показа.
+  Rationale: Это дает отдельный point-flow внутри того же EXE, но не тащит импортированные точки, цвет и путь `.kml` в grid-состояние, `ProjectState` или `.lgm.json`, сохраняя минимальную поверхность интеграции.
+  Date/Author: 2026-04-10, Codex.
+
 ## Outcomes & Retrospective
 
 Milestone `v2.0.1` завершен как рабочий этап roadmap. В репозитории появился минимальный, но уже проверяемый point-domain: `PointRecord`, `PointStyle`, helpers нормализации, `PointImportResult`/`PointImportError`, отдельный `point_kml` writer и `point_exporter`. Все это живет в новых `core/app`-модулях и не расширяет существующие grid-модели.
@@ -152,6 +160,10 @@ Roadmap при этом остается активным: `v2.0.2`, `v2.0.3`, `
 Milestone `v2.0.2` завершен как принятый этап roadmap. В репозитории появился реальный sample-first importer `.xlsx`: первый лист с данными, строгий заголовок `ФИО | Дата | Координаты`, нормализация Excel serial/text/date значений, построчная валидация и преобразование точек в WGS84 без смешивания point-flow с grid-flow.
 
 Главный итог этапа - зафиксирован строгий контракт входных данных до появления отдельного UI-окна. Теперь `v2.0.3` может опираться на готовый `PointImportResult`, показывать таблицу и ошибки, не споря о заголовке workbook, трактовке sample-координат или правилах блокировки экспорта. После ручного теста пользователя, офлайн-релизной проверки и сборки EXE текущей принятой версией проекта стала `v2.0.2`.
+
+Milestone `v2.0.3` завершен как рабочий этап roadmap. В приложении появилось отдельное окно `Точки из Excel` в `src/limuzin_grid_manager/ui/points_window.py`: оно загружает sample-first `.xlsx`, показывает сводку импорта, таблицу корректных точек, ошибки по строкам, единый стиль точек и путь итогового `.kml`. Через `QSettings` окно сохраняет только локальные удобства point-flow и не вмешивается в `ProjectState` или `.lgm.json`.
+
+Главный итог этапа - point-flow впервые стал доступен из интерфейса того же EXE без смешивания с grid-вкладками. `src/limuzin_grid_manager/ui/main_window.py` получил только меню `Инструменты -> Точки из Excel...` и удержание ссылки на окно, а offscreen-smoke тесты подтвердили открытие окна, загрузку workbook, изменение цвета и прозрачности и отсутствие регрессии в текущих вкладках `Предпросмотр`, `Проверка`, `Экспорт`. Автоматическая проверка этапа завершилась результатами `15 passed` для таргетированных point/UI-тестов, `81 passed` для полного `pytest` и успешным `compileall`.
 
 ## Context and Orientation
 
@@ -400,3 +412,4 @@ Revision note 2026-04-09 Europe/Moscow: roadmap обновлен после ре
 Revision note 2026-04-09 Europe/Moscow: roadmap обновлен после ручного теста пользователя и офлайн-релизной проверки; `v2.0.1` переведена из рабочей в принятую версию, зафиксированы сборка EXE `2.0.1.0` и smoke-запуск.
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.2`; зафиксированы `openpyxl`, рабочий `import_points_from_excel()`, strict sample-first `.xlsx`, трактовка sample-координат `х-... y-...` как положительных `X/Y` и новые workbook-тесты (`11 passed`).
 Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после ручного теста пользователя и офлайн-релизной проверки; `v2.0.2` переведена из рабочего milestone в принятую версию, зафиксированы сборка EXE `2.0.2.0` и подготовка публикации.
+Revision note 2026-04-10 Europe/Moscow: roadmap обновлен после реализации milestone `v2.0.3`; зафиксированы `PointsWindow`, меню `Инструменты -> Точки из Excel...`, локальные `QSettings` point-flow и автоматическая проверка (`15 passed`, `81 passed`, успешный `compileall`).

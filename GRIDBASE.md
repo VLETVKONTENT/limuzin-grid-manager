@@ -42,8 +42,9 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - Начиная с `v1.5.0`, многозонный экспорт включен для KML, ZIP, SVG, GeoJSON и CSV: writer-ы выбирают трансформер по зоне экспортируемой ячейки, нумерация больших квадратов остается глобальной, ZIP сохраняет `tile_###.kml`, а ячейка, пересекающая границу зоны внутри себя, блокируется понятной ошибкой.
 - Начиная с `v1.6.0`, SVG-подписи малых квадратов `100x100` центрируются через SVG baseline `middle`, не меняя KML/ZIP/GeoJSON/CSV и не меняя координатную математику.
 - Начиная с `v2.0.0`, возможности этапов `v1.1.0`-`v1.6.0` зафиксированы как стабильный major-релиз: KML/ZIP, SVG, GeoJSON, CSV, темы интерфейса и многозонный экспорт прошли единую релизную проверку и ручной тест пользователя.
-- Начиная с `v2.0.1`, в кодовой базе появился отдельный foundation-слой для point-flow: `PointRecord`, `PointStyle`, point-KML writer и point export service. Этот слой пока не встроен в `MainWindow`, не расширяет `GridOptions`, `ExportMode` и `.lgm.json` и служит базой для следующих этапов Excel/point-функциональности.
-- Начиная с `v2.0.2`, point-flow умеет читать sample-first `.xlsx` через `openpyxl`: первый лист с данными, строгий заголовок `ФИО | Дата | Координаты`, построчная валидация и преобразование `X/Y -> zone from Y -> pyproj(y, x) -> lon/lat`. UI для этого сценария еще не добавлен, но importer и автотесты уже зафиксированы.
+- Начиная с `v2.0.1`, в кодовой базе появился отдельный foundation-слой для point-flow: `PointRecord`, `PointStyle`, point-KML writer и point export service. Этот слой не расширяет `GridOptions`, `ExportMode` и `.lgm.json` и служит базой для следующих этапов Excel/point-функциональности.
+- Начиная с `v2.0.2`, point-flow умеет читать sample-first `.xlsx` через `openpyxl`: первый лист с данными, строгий заголовок `ФИО | Дата | Координаты`, построчная валидация и преобразование `X/Y -> zone from Y -> pyproj(y, x) -> lon/lat`.
+- Начиная с `v2.0.3`, внутри приложения есть отдельное окно `Точки из Excel`: оно открывается из меню `Инструменты`, живет отдельно от grid-flow, показывает сводку импорта, таблицу точек и ошибки по строкам, позволяет настроить общий цвет и прозрачность точек и сохранить point-KML без вмешательства в вкладки сетки и `.lgm.json`.
 
 Важное правило KML-стиля:
 
@@ -92,9 +93,10 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `src/limuzin_grid_manager/core/svg.py` — запись SVG-схемы как XML/text без новой зависимости.
 - `src/limuzin_grid_manager/core/geojson.py` — потоковая запись GeoJSON `FeatureCollection` через стандартный модуль `json`.
 - `src/limuzin_grid_manager/core/csv_export.py` — запись CSV через стандартный модуль `csv`, UTF-8 with BOM и разделитель `;`.
-- `src/limuzin_grid_manager/ui/main_window.py` — интерфейс PySide6.
+- `src/limuzin_grid_manager/ui/main_window.py` — интерфейс PySide6, вкладки grid-flow и точка входа в отдельное окно `Точки из Excel` через меню `Инструменты`.
 - `src/limuzin_grid_manager/ui/themes.py` — темы интерфейса, QSS и палитры предпросмотра.
 - `src/limuzin_grid_manager/ui/preview.py` — 2D-предпросмотр сетки, нумерации, цветов, масштабирование и перемещение.
+- `src/limuzin_grid_manager/ui/points_window.py` — отдельное окно `Точки из Excel`: загрузка `.xlsx`, сводка импорта, preview-таблица, ошибки по строкам, настройки point-style и экспорт point-KML.
 
 Тесты:
 
@@ -104,7 +106,7 @@ LIMUZIN GRID MANAGER — Windows-приложение для генерации 
 - `tests/test_points.py` — point-domain, sample-first Excel import через `openpyxl`, строгая валидация workbook, KML-цвет `aabbggrr`, XML-структура point-KML, progress writer-а и вызов point export service.
 - `tests/test_export_formats.py` — форматирование путей и сводки вкладки `Экспорт` для KML/ZIP/SVG/GeoJSON/CSV.
 - `tests/test_project.py` — сохранение/открытие `.lgm.json`, нормализация имени проекта, пресеты и ошибки схемы.
-- `tests/test_ui.py` — offscreen smoke-тесты `MainWindow` и вкладки `Экспорт`.
+- `tests/test_ui.py` — offscreen smoke-тесты `MainWindow`, вкладки `Экспорт` и отдельного окна `Точки из Excel`.
 
 ## Координатная логика
 
@@ -630,7 +632,7 @@ layer;zone;big_number;big_name;small_number;x_top;x_bottom;y_left;y_right;center
 - `PySide6`
 - `pyproj`
 
-Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall` и сборка `dist/LIMUZIN_GRID_MANAGER.exe` уже подтверждены для этой версии; отдельное окно точек, UI-поток экспорта и дополнительная полировка point-flow остаются задачами следующих milestone.
+Начиная с `v2.0.2`, runtime-зависимости включают `openpyxl` для чтения sample-first `.xlsx`. Для `v2.0.3` подтверждены offscreen/UI-тесты с отдельным окном точек, офлайн-пайплайн `uv lock --offline`, `pytest`, `compileall` и сборка `dist/LIMUZIN_GRID_MANAGER.exe`; отдельный фоновый point-export workflow и дополнительная полировка point-flow остаются задачами следующих milestone.
 
 Dev-зависимости:
 
@@ -681,6 +683,8 @@ uv run --extra dev pytest
 - Point-KML парсится как XML и содержит `Document/Waypoints`, `Placemark`, `Point`, `description`, `ExtendedData/comment` и общий `IconStyle/color`.
 - Point-domain нормализует дату в `dd.mm.yyyy`, координаты `X/Y` и цвет точки в формат KML `aabbggrr`.
 - Point-import через `openpyxl` читает первый лист с данными, требует заголовок `ФИО | Дата | Координаты`, собирает ошибки по строкам и блокирует экспорт при частично невалидном workbook.
+- Отдельное окно `Точки из Excel` открывается из меню `Инструменты`, повторно использует один и тот же экземпляр окна и не добавляет point-flow в вкладки `Предпросмотр` / `Проверка` / `Экспорт`.
+- Point-window хранит свои локальные настройки через `QSettings`: последний `.xlsx`, папку последнего point-KML, общий цвет точек и прозрачность.
 - Дефолтный KML не содержит цветной заливки.
 - KML поддерживает цвет и толщину линий больших и малых квадратов.
 - Заливка больших квадратов поддерживает один цвет, палитру по номерам, пользовательскую палитру и alpha-канал.
@@ -705,7 +709,7 @@ uv run --extra dev pytest
 - Большие экспорты получают предупреждения и блокируются при чрезмерном количестве объектов экспорта.
 - Прогресс экспорта считает большие и малые полигоны отдельно.
 - Отмена экспорта удаляет временный незавершенный файл.
-- Offscreen smoke-тесты проверяют создание `MainWindow`, вкладку `Экспорт`, панель проекта, кнопки отмены, применение пресета и автоматическое восстановление последнего проекта.
+- Offscreen smoke-тесты проверяют создание `MainWindow`, вкладку `Экспорт`, панель проекта, кнопки отмены, применение пресета, автоматическое восстановление последнего проекта и открытие отдельного окна `Точки из Excel` с его локальными настройками.
 
 Перед важными изменениями запускать:
 

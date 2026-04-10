@@ -75,6 +75,7 @@ from limuzin_grid_manager.core.models import (
     normalize_rgb_color,
 )
 from limuzin_grid_manager.core.stats import calculate_grid_stats, estimate_export_placemarks, estimate_export_size_bytes
+from limuzin_grid_manager.ui.points_window import PointsWindow
 from limuzin_grid_manager.ui.preview import GridPreviewWidget
 from limuzin_grid_manager.ui.themes import (
     DEFAULT_THEME_ID,
@@ -509,6 +510,7 @@ class MainWindow(QMainWindow):
         self._latest_stats: GridStats | None = None
         self._latest_options: GridOptions | None = None
         self._current_project_path: Path | None = None
+        self._points_window: PointsWindow | None = None
         self._settings = settings or QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
         self._theme_id = normalize_theme_id(self._settings.value(THEME_SETTINGS_KEY, DEFAULT_THEME_ID, str))
         self.big_tile_names: dict[int, str] = {}
@@ -563,6 +565,11 @@ class MainWindow(QMainWindow):
             self.theme_action_group.addAction(action)
             theme_menu.addAction(action)
             self.theme_actions[theme.theme_id] = action
+
+        tools_menu = self.menuBar().addMenu("Инструменты")
+        self.open_points_window_action = QAction("Точки из Excel...", self)
+        self.open_points_window_action.setShortcut("Ctrl+Shift+P")
+        tools_menu.addAction(self.open_points_window_action)
 
     def _build_ui(self) -> None:
         root = QWidget(self)
@@ -1053,6 +1060,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked=False, preset_id=preset_id: self.apply_preset(preset_id))
         for theme_id, action in self.theme_actions.items():
             action.triggered.connect(lambda _checked=False, theme_id=theme_id: self.apply_theme(theme_id))
+        self.open_points_window_action.triggered.connect(self.open_points_window)
 
     def _schedule_stats_update(self) -> None:
         if hasattr(self, "_stats_timer"):
@@ -1075,6 +1083,14 @@ class MainWindow(QMainWindow):
         self._settings.setValue(THEME_SETTINGS_KEY, self._theme_id)
         self._settings.sync()
         self._sync_theme_controls()
+
+    @Slot()
+    def open_points_window(self) -> None:
+        if self._points_window is None:
+            self._points_window = PointsWindow(settings=self._settings, parent=self)
+        self._points_window.show()
+        self._points_window.raise_()
+        self._points_window.activateWindow()
 
     def _sync_theme_controls(self) -> None:
         if hasattr(self, "theme_combo"):
@@ -1736,6 +1752,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Экспорт", "Идет экспорт. Дождитесь завершения или нажмите «Отменить».")
             event.ignore()
             return
+        if self._points_window is not None:
+            self._points_window.close()
         self._save_current_project_reference()
         super().closeEvent(event)
 

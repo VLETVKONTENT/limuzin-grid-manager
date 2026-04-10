@@ -7,12 +7,26 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QApplication
+from openpyxl import Workbook
 
 from limuzin_grid_manager.app.project import CoordinateState, ProjectState, project_state_to_dict, save_project_state
 from limuzin_grid_manager.core.models import GridOptions, SmallNumberingDirection, SmallNumberingMode
+from limuzin_grid_manager.core.points import PointStyle
 from limuzin_grid_manager.ui.main_window import LAST_PROJECT_PATH_KEY, THEME_SETTINGS_KEY
 from limuzin_grid_manager.ui.main_window import MainWindow
+from limuzin_grid_manager.ui.points_window import LAST_EXCEL_PATH_KEY, POINT_COLOR_KEY, POINT_OPACITY_KEY
+from limuzin_grid_manager.ui.points_window import PointsWindow
 from limuzin_grid_manager.ui.themes import DARK_THEME_ID, HIGH_CONTRAST_THEME_ID, SYSTEM_LIGHT_THEME_ID
+
+
+def _write_points_workbook(path, rows) -> None:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Лист1"
+    for row in rows:
+        worksheet.append(row)
+    workbook.save(path)
+    workbook.close()
 
 
 def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
@@ -155,4 +169,54 @@ def test_main_window_restores_last_project_from_settings(tmp_path) -> None:
         assert window.x_nw.text() == "5661000"
         assert window.export_filename.text() == "saved-profile.kml"
     finally:
+        window.close()
+
+
+def test_main_window_opens_points_window_and_points_window_uses_local_settings(tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+    _ = app
+    workbook_path = tmp_path / "points.xlsx"
+    _write_points_workbook(
+        workbook_path,
+        [
+            ["ФИО", "Дата", "Координаты"],
+            ["Мишарин Александр Витальевич", 46115, "х-5649764 y-6661612"],
+            ["Педьков Михаил Иванович", "03.04.2026", "х-5649800 y-6661934"],
+        ],
+    )
+
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    window = MainWindow(settings=settings, restore_last_project=False)
+
+    try:
+        tab_names = [window.workspace_tabs.tabText(index) for index in range(window.workspace_tabs.count())]
+        assert tab_names == ["Предпросмотр", "Проверка", "Экспорт"]
+
+        window.open_points_window_action.trigger()
+
+        points_window = window._points_window
+        assert isinstance(points_window, PointsWindow)
+        assert points_window.windowTitle() == "Точки из Excel"
+
+        points_window.load_excel_path(workbook_path)
+        points_window.point_color_button.set_color("#123456")
+        points_window.point_opacity.setValue(55)
+
+        assert points_window.preview_table.rowCount() == 2
+        assert points_window.preview_table.item(0, 0).text() == "2"
+        assert points_window.preview_table.item(0, 1).text() == "Мишарин Александр Витальевич"
+        assert "Корректных точек: 2." in points_window.summary_text.toPlainText()
+        assert "Ошибок нет." in points_window.error_text.toPlainText()
+        assert points_window.generate_button.isEnabled()
+        assert points_window.point_style() == PointStyle(color="#123456", opacity=55)
+        assert points_window.output_path.text().endswith("points.kml")
+
+        assert settings.value(LAST_EXCEL_PATH_KEY, "", str) == str(workbook_path)
+        assert settings.value(POINT_COLOR_KEY, "", str) == "#123456"
+        assert settings.value(POINT_OPACITY_KEY, 0, int) == 55
+
+        assert [window.workspace_tabs.tabText(index) for index in range(window.workspace_tabs.count())] == tab_names
+    finally:
+        if window._points_window is not None:
+            window._points_window.close()
         window.close()
