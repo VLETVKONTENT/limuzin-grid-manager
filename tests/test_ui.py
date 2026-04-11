@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import QApplication
 from openpyxl import Workbook
 
+from limuzin_grid_manager.app import runtime as runtime_module
 from limuzin_grid_manager.app.project import CoordinateState, ProjectState, project_state_to_dict, save_project_state
 from limuzin_grid_manager.core.models import GridOptions, SmallNumberingDirection, SmallNumberingMode
 from limuzin_grid_manager.core.points import PointStyle
@@ -386,5 +387,48 @@ def test_points_window_import_runs_in_background_and_blocks_close(tmp_path, monk
     finally:
         timer.cancel()
         release_import.set()
+        _wait_for_import(window)
+        window.close()
+
+
+def test_points_window_import_failure_logs_traceback_and_shows_log_path(tmp_path, monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    _ = app
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    window = PointsWindow(settings=settings)
+    log_directory = tmp_path / "runtime-logs"
+    monkeypatch.setattr(runtime_module, "resolve_log_directory", lambda: log_directory)
+    log_path = runtime_module.configure_runtime_logging()
+
+    def broken_import(_path):
+        raise ValueError("Broken workbook")
+
+    warnings: list[str] = []
+
+    def fake_warning(_parent, _title, text, *args, **kwargs):
+        warnings.append(text)
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(points_window_module, "import_points_from_excel", broken_import)
+    monkeypatch.setattr(points_window_module.QMessageBox, "warning", fake_warning)
+
+    try:
+        window.load_excel_path(tmp_path / "broken.xlsx")
+        _wait_for_import(window)
+
+        assert len(warnings) == 1
+        assert "Broken workbook" in warnings[0]
+        assert str(log_path) in warnings[0]
+        assert window.status_label.text() == "Импорт не выполнен"
+        assert "Broken workbook" in window.error_text.toPlainText()
+
+        for handler in runtime_module.get_runtime_logger().handlers:
+            handler.flush()
+        log_text = log_path.read_text(encoding="utf-8")
+
+        assert "Point import worker failed." in log_text
+        assert "Traceback" in log_text
+        assert "ValueError: Broken workbook" in log_text
+    finally:
         _wait_for_import(window)
         window.close()

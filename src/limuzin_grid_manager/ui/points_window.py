@@ -31,6 +31,7 @@ from limuzin_grid_manager.app.export_formats import default_export_directory
 from limuzin_grid_manager.app.point_exporter import export_points_kml
 from limuzin_grid_manager.app.point_import import PointImportResult, import_points_from_excel
 from limuzin_grid_manager.app.resources import resource_path
+from limuzin_grid_manager.app.runtime import build_diagnostics_message, log_exception
 from limuzin_grid_manager.core.export_progress import ExportCancelled
 from limuzin_grid_manager.core.points import PointStyle, normalize_point_color, normalize_point_opacity
 
@@ -69,7 +70,9 @@ class PointsExportWorker(QObject):
         except ExportCancelled as exc:
             self.cancelled.emit(str(exc))
         except Exception as exc:
-            self.failed.emit(str(exc))
+            log_exception("Point export worker failed.", logger_name="ui.points_window")
+            message = str(exc).strip() or exc.__class__.__name__
+            self.failed.emit(build_diagnostics_message(message))
         else:
             self.finished.emit(str(self._out_path))
 
@@ -93,7 +96,9 @@ class PointsImportWorker(QObject):
         try:
             result = import_points_from_excel(self._workbook_path)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            log_exception("Point import worker failed.", logger_name="ui.points_window")
+            message = str(exc).strip() or exc.__class__.__name__
+            self.failed.emit(build_diagnostics_message(message))
         else:
             self.finished.emit(result)
 

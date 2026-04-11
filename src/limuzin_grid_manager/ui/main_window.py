@@ -58,6 +58,7 @@ from limuzin_grid_manager.app.project import (
     save_project_state,
 )
 from limuzin_grid_manager.app.resources import resource_path
+from limuzin_grid_manager.app.runtime import build_diagnostics_message, log_exception
 from limuzin_grid_manager.core.geometry import normalize_bounds
 from limuzin_grid_manager.core.models import (
     BigTileFillMode,
@@ -118,7 +119,9 @@ class ExportWorker(QObject):
         except ExportCancelled as exc:
             self.cancelled.emit(str(exc))
         except Exception as exc:
-            self.failed.emit(str(exc))
+            log_exception("Grid export worker failed.", logger_name="ui.main_window")
+            message = str(exc).strip() or exc.__class__.__name__
+            self.failed.emit(build_diagnostics_message(message))
         else:
             self.finished.emit(str(self._out_path))
 

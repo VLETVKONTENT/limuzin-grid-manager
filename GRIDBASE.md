@@ -50,6 +50,7 @@ LIMUZIN GRID MANAGER - Windows-приложение для генерации с
 - Начиная с `v2.0.5`, блок `Предварительный просмотр и ошибки` в окне `Точки из Excel` разделен вертикальным `QSplitter`: preview-таблица и панель ошибок имеют увеличенные минимальные размеры и могут вручную перераспределять высоту, поэтому область не схлопывается до одной видимой строки.
 - Начиная с `v2.1.1`, сохранение `.lgm.json` выполняется атомарно через временный файл рядом с целевым проектом: если запись или `replace()` завершается ошибкой, временный `.tmp` удаляется, а предыдущий файл проекта остается нетронутым.
 - Начиная с `v2.1.2`, импорт `.xlsx` в окне `Точки из Excel` выполняется в отдельном worker-потоке: окно остается отзывчивым, на время импорта показывает running state, отключает конфликтующие элементы и не дает закрыть себя до завершения чтения workbook.
+- Начиная с `v2.1.3`, runtime-ошибки и падения worker-ов пишут traceback в `runtime.log` внутри локального app-data каталога приложения; пользовательские сообщения об ошибках показывают путь к журналу, чтобы сбой можно было диагностировать без внутреннего traceback в UI.
 
 Важное правило KML-стиля:
 
@@ -84,6 +85,7 @@ LIMUZIN GRID MANAGER - Windows-приложение для генерации с
 - `src/limuzin_grid_manager/app/point_import.py` — point-import service: `PointImportResult`, `PointImportError`, чтение `.xlsx` через `openpyxl`, strict sample-first заголовок и построчная валидация point-flow.
 - `src/limuzin_grid_manager/app/project.py` — сохранение/открытие `.lgm.json`, атомарная запись проекта и встроенные пресеты проекта.
 - `src/limuzin_grid_manager/app/resources.py` — поиск ресурсов в исходниках и PyInstaller bundle.
+- `src/limuzin_grid_manager/app/runtime.py` — runtime-диагностика: выбор каталога логов, `RotatingFileHandler`, global exception hooks и user-facing diagnostics с путем к `runtime.log`.
 - `src/limuzin_grid_manager/core/models.py` — dataclass-модели и enum-режимы.
 - `src/limuzin_grid_manager/core/crs.py` — преобразование СК-42 / Гаусс-Крюгер -> WGS84.
 - `src/limuzin_grid_manager/core/points.py` — point-domain: `PointRecord`, `PointStyle`, нормализация даты, координат, цвета и KML-кодирования цвета.
@@ -110,6 +112,7 @@ LIMUZIN GRID MANAGER - Windows-приложение для генерации с
 - `tests/test_core.py` — геометрия, округление, змейка.
 - `tests/test_zones.py` — определение зон, сегментация `Bounds` по границам зон, разрешенный многозонный экспорт и ошибка для ячейки, которая пересекает границу зоны внутри себя.
 - `tests/test_export.py` — KML, ZIP, SVG, GeoJSON, CSV, KML/SVG-стиль, заливка `1000x1000` и `100x100`, многозонный экспорт и ошибка для смещенной ячейки на границе зоны.
+- `tests/test_runtime.py` — создание `runtime.log`, установка global exception hooks и user-facing diagnostics с путем к журналу.
 - `tests/test_points.py` — point-domain, sample-first Excel import через `openpyxl`, строгая валидация workbook, KML-цвет `aabbggrr`, XML-структура point-KML, progress writer-а и вызов point export service.
 - `tests/test_export_formats.py` — форматирование путей и сводки вкладки `Экспорт` для KML/ZIP/SVG/GeoJSON/CSV.
 - `tests/test_project.py` — сохранение/открытие `.lgm.json`, нормализация имени проекта, пресеты и ошибки схемы.

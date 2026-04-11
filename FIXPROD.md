@@ -19,7 +19,10 @@ After completing this plan, a user should be able to save projects without fear 
 - [x] (2026-04-11 11:20+03:00) Implemented `v2.1.2`: `src/limuzin_grid_manager/ui/points_window.py` now imports Excel in a dedicated `QThread` worker, keeps the window responsive, disables conflicting controls during import, and blocks window closing until the worker finishes.
 - [x] (2026-04-11 11:20+03:00) Added UI smoke coverage in `tests/test_ui.py` for the import-running state, background import behavior, and close blocking while Excel import is active.
 - [x] (2026-04-11 11:20+03:00) Synced `v2.1.2` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.2.md`.
-- [ ] Implement `v2.1.3`: runtime logging, global exception hooks, worker traceback logging, and user-visible crash diagnostics.
+- [x] (2026-04-11 13:25+03:00) Implemented `v2.1.3`: added `src/limuzin_grid_manager/app/runtime.py` with rotating runtime logging, local app-data log placement plus fallback, and global hooks for main-thread and Python-thread exceptions.
+- [x] (2026-04-11 13:25+03:00) Updated `src/limuzin_grid_manager/__main__.py`, `src/limuzin_grid_manager/ui/main_window.py`, and `src/limuzin_grid_manager/ui/points_window.py` so startup installs diagnostics before showing the UI and worker failures log full tracebacks while user-facing messages include the log-file path.
+- [x] (2026-04-11 13:25+03:00) Added regression coverage in `tests/test_runtime.py` and `tests/test_ui.py` for runtime-log creation, exception-hook diagnostics, and point-import worker failures that now leave behind a traceback-containing log.
+- [x] (2026-04-11 13:25+03:00) Synced `v2.1.3` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.3.md`.
 - [ ] Implement `v2.1.4`: GitHub Actions CI for Windows validation, packaging checks, and documented release-check workflow.
 - [ ] Implement `v2.2.0`: optional local and CI code-signing path, signed release verification, and final production release checklist.
 
@@ -45,6 +48,12 @@ After completing this plan, a user should be able to save projects without fear 
 
 - Observation: moving Excel import off the GUI thread did not require changes to the workbook parsing rules; the whole patch lived in `PointsWindow` orchestration and UI state.
   Evidence: `src/limuzin_grid_manager/app/point_import.py` stayed untouched while `tests/test_points.py` and `tests/test_ui.py` passed together at `20 passed`.
+
+- Observation: Qt already knows the correct per-user application-data directory once `QApplication` names are set, so `QStandardPaths` can choose the primary log directory without adding a new dependency.
+  Evidence: `src/limuzin_grid_manager/__main__.py` now sets the app and organization names before `configure_runtime_logging()`, and `src/limuzin_grid_manager/app/runtime.py` resolves logs through `QStandardPaths.AppLocalDataLocation`.
+
+- Observation: the worker diagnostics patch is easiest to validate through the point-import path because it already has UI tests that monkeypatch the failing service and capture `QMessageBox.warning`.
+  Evidence: `tests/test_ui.py::test_points_window_import_failure_logs_traceback_and_shows_log_path` proves both the user-facing message and the traceback inside `runtime.log`.
 
 ## Decision Log
 
@@ -72,6 +81,14 @@ After completing this plan, a user should be able to save projects without fear 
   Rationale: the user-visible freeze is solved by moving import to a worker thread, while safe mid-read cancellation for `openpyxl` would add more risk than value to this patch release.
   Date/Author: 2026-04-11 / Codex
 
+- Decision: use a dedicated runtime module with Python `logging` plus `RotatingFileHandler` instead of scattering ad-hoc file writes through the UI.
+  Rationale: the new diagnostics behavior spans startup, worker code, and future background paths, so a single module keeps path resolution, hook installation, and user-facing log hints consistent.
+  Date/Author: 2026-04-11 / Codex
+
+- Decision: choose the runtime-log directory through Qt first and only then fall back to `%LOCALAPPDATA%` or the user profile.
+  Rationale: `QStandardPaths` keeps the log path aligned with the running desktop app on Windows, while the fallback path prevents startup failure on systems where the preferred directory cannot be created.
+  Date/Author: 2026-04-11 / Codex
+
 ## Outcomes & Retrospective
 
 The roadmap is now in motion. `v2.1.1` is implemented as the current working version and closes the most immediate project-data-loss risk: saving a project can no longer overwrite a valid `.lgm.json` with a half-written file. The observable proof is in the new regression coverage for interrupted saves and the passing validation runs (`12 passed` for `tests/test_project.py`, then `87 passed` for the full suite, plus `compileall` without errors).
@@ -80,11 +97,13 @@ What remains is still the higher-level production hardening originally planned: 
 
 `v2.1.2` now closes the next operational gap: loading a workbook in `Точки из Excel` no longer freezes the window. The observable proof is the new background-import worker, the import-running UI state, and the targeted validation run `uv run --extra dev pytest tests/test_points.py tests/test_ui.py` with `20 passed`, followed by `compileall` without errors.
 
+`v2.1.3` closes the supportability gap that remained after the UI became responsive: failures now leave behind actionable diagnostics instead of only transient dialogs. The observable proof is the new `runtime.log`, the exception-hook tests in `tests/test_runtime.py`, the UI regression that captures the log path from a failed Excel import, and the full-suite validation moving to `91 passed`.
+
 ## Context and Orientation
 
 The repository root already contains the release and behavior map needed for this work. `README.md` explains the product surface and build steps. `GRIDBASE.md` is the technical source of truth for architecture and constraints. `GITHUB.md` defines how versions, releases, tags, and public repository hygiene are handled. `versions/GRIDVERSIONS.md` records accepted versions, and each release note lives in `versions/vX.Y.Z.md`.
 
-The Python package is under `src/limuzin_grid_manager`. The file `src/limuzin_grid_manager/app/project.py` owns `.lgm.json` serialization and deserialization. The file `src/limuzin_grid_manager/ui/points_window.py` owns the separate “Точки из Excel” window and currently performs workbook import on the GUI thread. The file `src/limuzin_grid_manager/ui/main_window.py` already contains a working background export pattern with `QThread` and worker objects; that pattern should be reused instead of invented again. The file `src/limuzin_grid_manager/__main__.py` is the GUI bootstrap and is the correct place to install startup-time runtime helpers. The file `build_exe_windows.bat` is the canonical EXE builder and must remain the authoritative local build path.
+The Python package is under `src/limuzin_grid_manager`. The file `src/limuzin_grid_manager/app/project.py` owns `.lgm.json` serialization and deserialization. The file `src/limuzin_grid_manager/ui/points_window.py` owns the separate “Точки из Excel” window and already imports workbooks through a background `QThread` worker. The file `src/limuzin_grid_manager/ui/main_window.py` already contains a working background export pattern with `QThread` and worker objects. The new file `src/limuzin_grid_manager/app/runtime.py` is now the shared home for log-path selection, rotating-file logging, and global exception hooks. The file `src/limuzin_grid_manager/__main__.py` is the GUI bootstrap and is the correct place to install startup-time runtime helpers. The file `build_exe_windows.bat` is the canonical EXE builder and must remain the authoritative local build path.
 
 In this plan, an “atomic save” means writing the full new content to a temporary file in the same directory and replacing the target file only after the write succeeds. A “worker” means a `QObject` moved to a `QThread` so the PySide6 GUI event loop stays responsive. A “crash log” means a timestamped or rotating text log file that captures stack traces and context after an unexpected failure. A “signed EXE” means the result of Windows Authenticode signing, which can be checked with `Get-AuthenticodeSignature`.
 
@@ -160,7 +179,21 @@ For `v2.1.3`, add the runtime logging module, install the hooks in startup, make
     uv run --extra dev pytest
     uv run limuzin-grid-manager
 
-The expected outcome is that the full test suite remains green and the launched app creates a log directory on first run. A deliberately triggered failure should produce a readable log entry with a traceback and a user-facing hint about where the log is stored.
+Completed on 2026-04-11. The observed outcome was:
+
+    uv run --extra dev pytest tests/test_runtime.py tests/test_ui.py
+    ...
+    ============================== 9 passed in 6.41s ==============================
+
+    uv run --extra dev pytest
+    ...
+    ============================= 91 passed in 5.92s ==============================
+
+    uv run --extra dev python -m compileall src tests
+    Listing 'src'...
+    Listing 'tests'...
+
+The new runtime tests prove that the exception hook logs a traceback to `runtime.log` and shows the log path to the user, while the UI regression proves the same behavior for a failed Excel import worker.
 
 For `v2.1.4`, add the workflow files and documentation changes, then run:
 
@@ -202,7 +235,7 @@ The current baseline evidence for this plan is:
 
     uv run --extra dev pytest
     ...
-    ============================= 85 passed in 2.19s ==============================
+    ============================= 91 passed in 5.92s ==============================
 
     uv run --extra dev python -m compileall src tests
     Listing 'src'...
@@ -233,7 +266,7 @@ In `src/limuzin_grid_manager/app/project.py`, keep the public function `save_pro
 
 In `src/limuzin_grid_manager/ui/points_window.py`, define a new `PointsImportWorker(QObject)` alongside the existing `PointsExportWorker`. Use `finished = Signal(object)` so a `PointImportResult` can cross the Qt signal boundary without custom Qt type registration. Add `_import_thread`, `_import_worker`, and a UI-state helper such as `_set_import_running(running: bool) -> None`. The public method `load_excel_path(...)` should remain the entry point that the rest of the UI calls.
 
-In `src/limuzin_grid_manager/app/runtime.py`, define stable startup helpers. The minimum interface should include a logging initializer and an exception-hook installer, for example `configure_runtime_logging() -> Path` and `install_exception_hooks(log_path: Path) -> None`. `src/limuzin_grid_manager/__main__.py` must call them before `MainWindow()` is shown.
+In `src/limuzin_grid_manager/app/runtime.py`, define stable startup helpers. The minimum interface should include a logging initializer and an exception-hook installer, for example `configure_runtime_logging() -> Path` and `install_exception_hooks() -> None`. `src/limuzin_grid_manager/__main__.py` must call them before `MainWindow()` is shown.
 
 In `.github/workflows/ci.yml`, the primary job should run Windows validation with `uv`. In `.github/workflows/release-windows.yml`, the primary job should build the EXE artifact. In `build_exe_windows.bat`, the new signing stage must be additive and environment-variable-driven so normal unsigned local builds still work.
 
@@ -242,3 +275,4 @@ The tests added for this plan should use stable names so future contributors can
 Revision note: this file was created on 2026-04-10 to turn the production-readiness audit into a staged, novice-readable ExecPlan that can be implemented release by release from `v2.1.0` to `v2.2.0`.
 Revision note: updated on 2026-04-11 after implementing `v2.1.1` so the plan now records the completed atomic-save milestone, its validation evidence, and the decision to keep the helper local to `app/project.py`.
 Revision note: updated on 2026-04-11 after implementing `v2.1.2` so the plan now records the completed responsive Excel import milestone, its UI-smoke coverage, and the decision to keep cancellation out of scope for this patch.
+Revision note: updated on 2026-04-11 after implementing `v2.1.3` so the plan now records the completed crash-logging milestone, its runtime/UI diagnostics coverage, and the decision to centralize logging in `app/runtime.py`.
