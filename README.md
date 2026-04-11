@@ -1,8 +1,8 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v2.1.3`
+**Текущая версия:** `v2.1.4`
 
-**Статус:** текущая принятая стабильная версия после ручного пользовательского теста — `v2.1.3`
+**Статус:** текущая принятая стабильная версия после ручного пользовательского теста — `v2.1.4`
 
 **Платформа:** Windows
 
@@ -261,6 +261,11 @@ uv run limuzin-grid-manager
 dist/LIMUZIN_GRID_MANAGER.exe
 ```
 
+Начиная с `v2.1.4`, репозиторий также содержит GitHub Actions workflows:
+
+- `.github/workflows/ci.yml` — Windows CI для push и pull request с `pytest`, `compileall` и `uv build`;
+- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка unsigned EXE с публикацией артефакта в Actions.
+
 Скрипт сборки:
 
 - синхронизирует окружение через `uv`;
@@ -281,6 +286,8 @@ uv run --extra dev pytest
 ```powershell
 uv run --extra dev python -m compileall src tests
 ```
+
+Для репозитория `v2.1.4` автоматическая проверка тех же команд теперь выполняется и в GitHub Actions на Windows для Python `3.11` и `3.12`. Для проверки воспроизводимости упаковки доступен отдельный workflow сборки EXE-артефакта.
 
 Релизная проверка перед ручным тестом:
 
@@ -351,7 +358,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - [`GITHUB.md`](GITHUB.md) — правила commit/push/tag/release и проверки перед публичным репозиторием.
 - [`roadmap.md`](roadmap.md) — история движения к стабильной версии `v1.0`.
 - [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v2.0.3.md`](versions/v2.0.3.md) — заметки текущей принятой версии.
+- [`versions/v2.1.4.md`](versions/v2.1.4.md) — заметки текущей принятой версии.
 
 ## Лицензия
 
@@ -365,13 +372,13 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 ## Текущая версия
 
-Текущая рабочая версия: `v2.1.3`.
+Текущая рабочая версия: `v2.1.4`.
 
-Текущая принятая версия: `v2.1.3`.
+Текущая принятая версия: `v2.1.4`.
 
-Предыдущая стабильная версия: `v2.1.2`.
+Предыдущая стабильная версия: `v2.1.3`.
 
-Изменения текущей рабочей версии описаны в [`versions/v2.1.3.md`](versions/v2.1.3.md).
-Изменения текущей принятой версии описаны в [`versions/v2.1.3.md`](versions/v2.1.3.md).
+Изменения текущей рабочей версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
+Изменения текущей принятой версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
 
 Готовый EXE для публикации должен прикрепляться к GitHub Release как asset, а не храниться в git-истории.

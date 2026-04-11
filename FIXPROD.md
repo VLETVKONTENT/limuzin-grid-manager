@@ -23,7 +23,9 @@ After completing this plan, a user should be able to save projects without fear 
 - [x] (2026-04-11 13:25+03:00) Updated `src/limuzin_grid_manager/__main__.py`, `src/limuzin_grid_manager/ui/main_window.py`, and `src/limuzin_grid_manager/ui/points_window.py` so startup installs diagnostics before showing the UI and worker failures log full tracebacks while user-facing messages include the log-file path.
 - [x] (2026-04-11 13:25+03:00) Added regression coverage in `tests/test_runtime.py` and `tests/test_ui.py` for runtime-log creation, exception-hook diagnostics, and point-import worker failures that now leave behind a traceback-containing log.
 - [x] (2026-04-11 13:25+03:00) Synced `v2.1.3` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.3.md`.
-- [ ] Implement `v2.1.4`: GitHub Actions CI for Windows validation, packaging checks, and documented release-check workflow.
+- [x] (2026-04-11 14:58+03:00) Implemented `v2.1.4`: added `.github/workflows/ci.yml` for Windows validation on push and pull request and `.github/workflows/release-windows.yml` for manual or tag-triggered EXE artifact builds.
+- [x] (2026-04-11 14:58+03:00) Updated release-process documentation in `GITHUB.md` so the checklist now distinguishes local smoke validation, green CI, and an available EXE artifact from Actions before tag/release publication.
+- [x] (2026-04-11 14:58+03:00) Synced `v2.1.4` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `uv.lock`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.4.md`.
 - [ ] Implement `v2.2.0`: optional local and CI code-signing path, signed release verification, and final production release checklist.
 
 ## Surprises & Discoveries
@@ -54,6 +56,12 @@ After completing this plan, a user should be able to save projects without fear 
 
 - Observation: the worker diagnostics patch is easiest to validate through the point-import path because it already has UI tests that monkeypatch the failing service and capture `QMessageBox.warning`.
   Evidence: `tests/test_ui.py::test_points_window_import_failure_logs_traceback_and_shows_log_path` proves both the user-facing message and the traceback inside `runtime.log`.
+
+- Observation: adding repository-native CI did not require new helper scripts because the existing `uv` commands and `build_exe_windows.bat` were already automation-friendly.
+  Evidence: `.github/workflows/ci.yml` only needs `uv sync --extra dev --locked`, `uv run --extra dev pytest`, `uv run --extra dev python -m compileall src tests`, and `uv build`, while `.github/workflows/release-windows.yml` can call `build_exe_windows.bat` directly.
+
+- Observation: bumping the package version also updates the local editable package entry in `uv.lock`, so release synchronization for this repository should include the lock file even when dependencies stay the same.
+  Evidence: after changing the project to `2.1.4`, `uv.lock` changed `limuzin-grid-manager` from `version = "2.1.3"` to `version = "2.1.4"`.
 
 ## Decision Log
 
@@ -89,6 +97,14 @@ After completing this plan, a user should be able to save projects without fear 
   Rationale: `QStandardPaths` keeps the log path aligned with the running desktop app on Windows, while the fallback path prevents startup failure on systems where the preferred directory cannot be created.
   Date/Author: 2026-04-11 / Codex
 
+- Decision: keep the first repository-native CI matrix on Windows with Python `3.11` and `3.12`, while the EXE artifact workflow builds on Python `3.11`.
+  Rationale: Windows is the product target, a two-version matrix adds meaningful coverage without overcomplicating the first CI rollout, and a single Python version for EXE packaging keeps the artifact path deterministic.
+  Date/Author: 2026-04-11 / Codex
+
+- Decision: install `uv` in GitHub Actions through `python -m pip install uv` instead of adding another setup action dependency.
+  Rationale: the workflows stay self-explanatory, depend on fewer external action interfaces, and remain easy to reproduce locally from the same commands shown in the documentation.
+  Date/Author: 2026-04-11 / Codex
+
 ## Outcomes & Retrospective
 
 The roadmap is now in motion. `v2.1.1` is implemented as the current working version and closes the most immediate project-data-loss risk: saving a project can no longer overwrite a valid `.lgm.json` with a half-written file. The observable proof is in the new regression coverage for interrupted saves and the passing validation runs (`12 passed` for `tests/test_project.py`, then `87 passed` for the full suite, plus `compileall` without errors).
@@ -99,9 +115,11 @@ What remains is still the higher-level production hardening originally planned: 
 
 `v2.1.3` closes the supportability gap that remained after the UI became responsive: failures now leave behind actionable diagnostics instead of only transient dialogs. The observable proof is the new `runtime.log`, the exception-hook tests in `tests/test_runtime.py`, the UI regression that captures the log path from a failed Excel import, and the full-suite validation moving to `91 passed`.
 
+`v2.1.4` closes the automation gap that remained after the app itself became safer to run and support. The repository now has a Windows CI gate for push and pull request validation plus a dedicated workflow that rebuilds the unsigned EXE and publishes it as an Actions artifact. The observable proof is the new workflow pair in `.github/workflows`, the updated release procedure in `GITHUB.md`, and the local validation run staying green at `91 passed`, `compileall` without errors, and `uv build` producing the `2.1.4` wheel and source distribution.
+
 ## Context and Orientation
 
-The repository root already contains the release and behavior map needed for this work. `README.md` explains the product surface and build steps. `GRIDBASE.md` is the technical source of truth for architecture and constraints. `GITHUB.md` defines how versions, releases, tags, and public repository hygiene are handled. `versions/GRIDVERSIONS.md` records accepted versions, and each release note lives in `versions/vX.Y.Z.md`.
+The repository root already contains the release and behavior map needed for this work. `README.md` explains the product surface and build steps. `GRIDBASE.md` is the technical source of truth for architecture and constraints. `GITHUB.md` defines how versions, releases, tags, CI, and public repository hygiene are handled. `versions/GRIDVERSIONS.md` records accepted versions, and each release note lives in `versions/vX.Y.Z.md`. The new repository automation lives under `.github/workflows`.
 
 The Python package is under `src/limuzin_grid_manager`. The file `src/limuzin_grid_manager/app/project.py` owns `.lgm.json` serialization and deserialization. The file `src/limuzin_grid_manager/ui/points_window.py` owns the separate “Точки из Excel” window and already imports workbooks through a background `QThread` worker. The file `src/limuzin_grid_manager/ui/main_window.py` already contains a working background export pattern with `QThread` and worker objects. The new file `src/limuzin_grid_manager/app/runtime.py` is now the shared home for log-path selection, rotating-file logging, and global exception hooks. The file `src/limuzin_grid_manager/__main__.py` is the GUI bootstrap and is the correct place to install startup-time runtime helpers. The file `build_exe_windows.bat` is the canonical EXE builder and must remain the authoritative local build path.
 
@@ -202,7 +220,24 @@ For `v2.1.4`, add the workflow files and documentation changes, then run:
     uv build
     git status --short
 
-The expected outcome is that the local validation still passes, the new workflow YAML files are the only automation additions, and the repository remains free of committed build artifacts.
+Completed on 2026-04-11. The observed outcome was:
+
+    uv run --extra dev pytest
+    ...
+    ============================= 91 passed in 2.84s ==============================
+
+    uv run --extra dev python -m compileall src tests
+    Listing 'src'...
+    Listing 'src\\limuzin_grid_manager'...
+    Listing 'tests'...
+
+    uv build
+    Building source distribution...
+    Building wheel from source distribution...
+    Successfully built dist\\limuzin_grid_manager-2.1.4.tar.gz
+    Successfully built dist\\limuzin_grid_manager-2.1.4-py3-none-any.whl
+
+The repository now contains `.github/workflows/ci.yml` and `.github/workflows/release-windows.yml`, while the generated `dist` package artifacts remain untracked build output.
 
 For `v2.2.0`, add the signing hooks and the final release procedure, then run:
 
@@ -235,20 +270,32 @@ The current baseline evidence for this plan is:
 
     uv run --extra dev pytest
     ...
-    ============================= 91 passed in 5.92s ==============================
+    ============================= 91 passed in 2.84s ==============================
 
     uv run --extra dev python -m compileall src tests
     Listing 'src'...
+    Listing 'src\\limuzin_grid_manager'...
     Listing 'tests'...
 
-    Test-Path .github\workflows
-    False
+    uv build
+    Building source distribution...
+    Building wheel from source distribution...
+    Successfully built dist\\limuzin_grid_manager-2.1.4.tar.gz
+    Successfully built dist\\limuzin_grid_manager-2.1.4-py3-none-any.whl
 
-    .\build_exe_windows.bat
-    Done. Check dist\LIMUZIN_GRID_MANAGER.exe
-
-    Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
-    Status        : NotSigned
+    git status --short
+     M GITHUB.md
+     M GRIDBASE.md
+     M README.md
+     M USER_GUIDE.md
+     M pyproject.toml
+     M roadmap.md
+     M src/limuzin_grid_manager/__init__.py
+     M uv.lock
+     M version_info.txt
+     M versions/GRIDVERSIONS.md
+    ?? .github/
+    ?? versions/v2.1.4.md
 
 The code locations that motivated the first two fixes are:
 
@@ -268,7 +315,7 @@ In `src/limuzin_grid_manager/ui/points_window.py`, define a new `PointsImportWor
 
 In `src/limuzin_grid_manager/app/runtime.py`, define stable startup helpers. The minimum interface should include a logging initializer and an exception-hook installer, for example `configure_runtime_logging() -> Path` and `install_exception_hooks() -> None`. `src/limuzin_grid_manager/__main__.py` must call them before `MainWindow()` is shown.
 
-In `.github/workflows/ci.yml`, the primary job should run Windows validation with `uv`. In `.github/workflows/release-windows.yml`, the primary job should build the EXE artifact. In `build_exe_windows.bat`, the new signing stage must be additive and environment-variable-driven so normal unsigned local builds still work.
+In `.github/workflows/ci.yml`, the primary job now runs Windows validation with `uv` across Python `3.11` and `3.12`. In `.github/workflows/release-windows.yml`, the primary job now builds the EXE artifact on Windows with Python `3.11` and uploads `dist\LIMUZIN_GRID_MANAGER.exe`. In `build_exe_windows.bat`, the future `v2.2.0` signing stage must still be additive and environment-variable-driven so normal unsigned local builds continue to work.
 
 The tests added for this plan should use stable names so future contributors can find them quickly. Recommended additions are `test_save_project_state_is_atomic_when_replace_fails` in `tests/test_project.py`, `test_points_window_import_running_state_disables_controls` in `tests/test_ui.py`, and a focused runtime logging test in a new `tests/test_runtime.py` if the logging helpers become large enough to deserve direct coverage.
 
@@ -276,3 +323,4 @@ Revision note: this file was created on 2026-04-10 to turn the production-readin
 Revision note: updated on 2026-04-11 after implementing `v2.1.1` so the plan now records the completed atomic-save milestone, its validation evidence, and the decision to keep the helper local to `app/project.py`.
 Revision note: updated on 2026-04-11 after implementing `v2.1.2` so the plan now records the completed responsive Excel import milestone, its UI-smoke coverage, and the decision to keep cancellation out of scope for this patch.
 Revision note: updated on 2026-04-11 after implementing `v2.1.3` so the plan now records the completed crash-logging milestone, its runtime/UI diagnostics coverage, and the decision to centralize logging in `app/runtime.py`.
+Revision note: updated on 2026-04-11 after implementing `v2.1.4` so the plan now records the completed GitHub Actions milestone, the release-discipline workflow changes, the `uv.lock` version-sync discovery, and the validation evidence for the new automation gate.

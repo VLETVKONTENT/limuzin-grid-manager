@@ -49,7 +49,7 @@ wheels = [
 
 [[package]]
 name = "limuzin-grid-manager"
-version = "2.1.3"
+version = "2.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "openpyxl" },
