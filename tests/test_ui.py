@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QSettings, Qt
+from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import QApplication
 from openpyxl import Workbook
 
@@ -14,6 +17,7 @@ from limuzin_grid_manager.core.models import GridOptions, SmallNumberingDirectio
 from limuzin_grid_manager.core.points import PointStyle
 from limuzin_grid_manager.ui.main_window import LAST_PROJECT_PATH_KEY, THEME_SETTINGS_KEY
 from limuzin_grid_manager.ui.main_window import MainWindow
+from limuzin_grid_manager.ui import points_window as points_window_module
 from limuzin_grid_manager.ui.points_window import LAST_EXCEL_PATH_KEY, POINT_COLOR_KEY, POINT_OPACITY_KEY
 from limuzin_grid_manager.ui.points_window import PointsWindow
 from limuzin_grid_manager.ui.themes import DARK_THEME_ID, HIGH_CONTRAST_THEME_ID, SYSTEM_LIGHT_THEME_ID
@@ -27,6 +31,21 @@ def _write_points_workbook(path, rows) -> None:
         worksheet.append(row)
     workbook.save(path)
     workbook.close()
+
+def _wait_until(predicate, timeout: float = 3.0) -> None:
+    app = QApplication.instance() or QApplication([])
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return
+        time.sleep(0.01)
+    app.processEvents()
+    assert predicate()
+
+
+def _wait_for_import(window: PointsWindow, timeout: float = 3.0) -> None:
+    _wait_until(lambda: window._import_thread is None, timeout=timeout)
 
 
 def test_main_window_has_export_tab_and_live_summary(tmp_path) -> None:
@@ -199,6 +218,7 @@ def test_main_window_opens_points_window_and_points_window_uses_local_settings(t
         assert points_window.windowTitle() == "Точки из Excel"
 
         points_window.load_excel_path(workbook_path)
+        _wait_for_import(points_window)
         points_window.point_color_button.set_color("#123456")
         points_window.point_opacity.setValue(55)
 
@@ -242,6 +262,7 @@ def test_points_window_running_state_disables_controls_and_shows_progress(tmp_pa
 
     try:
         window.load_excel_path(workbook_path)
+        _wait_for_import(window)
         window._last_output_path = tmp_path / "ready.kml"
 
         window._set_export_running(True)
@@ -267,4 +288,103 @@ def test_points_window_running_state_disables_controls_and_shows_progress(tmp_pa
         assert window.generate_button.isEnabled()
         assert window.open_output_folder_button.isEnabled()
     finally:
+        window.close()
+
+def test_points_window_import_runs_in_background_and_blocks_close(tmp_path, monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    _ = app
+
+    header_fio = "".join(chr(code) for code in (1060, 1048, 1054))
+    header_date = "".join(chr(code) for code in (1044, 1072, 1090, 1072))
+    header_coordinates = "".join(chr(code) for code in (1050, 1086, 1086, 1088, 1076, 1080, 1085, 1072, 1090, 1099))
+
+    workbook_path = tmp_path / "points.xlsx"
+    _write_points_workbook(
+        workbook_path,
+        [
+            [header_fio, header_date, header_coordinates],
+            ["Point 1", 46115, "x=-5649764 y=-6661612"],
+        ],
+    )
+
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    window = PointsWindow(settings=settings)
+
+    started = threading.Event()
+    release_import = threading.Event()
+    real_import = points_window_module.import_points_from_excel
+
+    def delayed_import(path):
+        started.set()
+        assert release_import.wait(2.0)
+        return real_import(path)
+
+    monkeypatch.setattr(points_window_module, "import_points_from_excel", delayed_import)
+
+    warnings: list[str] = []
+
+    def fake_warning(_parent, _title, text, *args, **kwargs):
+        warnings.append(text)
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(points_window_module.QMessageBox, "warning", fake_warning)
+
+    class DummyCloseEvent:
+        def __init__(self) -> None:
+            self.ignored = False
+
+        def ignore(self) -> None:
+            self.ignored = True
+
+    timer = threading.Timer(0.4, release_import.set)
+    timer.start()
+
+    try:
+        started_at = time.perf_counter()
+        window.load_excel_path(workbook_path)
+        elapsed = time.perf_counter() - started_at
+
+        assert elapsed < 0.2
+        _wait_until(lambda: started.is_set() and window._import_thread is not None)
+
+        assert not window.progress.isHidden()
+        assert window.progress.minimum() == 0
+        assert window.progress.maximum() == 0
+        assert window.cancel_button.isHidden()
+        assert not window.excel_path.isEnabled()
+        assert not window.excel_browse_button.isEnabled()
+        assert not window.excel_load_button.isEnabled()
+        assert not window.output_path.isEnabled()
+        assert not window.output_browse_button.isEnabled()
+        assert not window.point_color_button.isEnabled()
+        assert not window.point_opacity.isEnabled()
+        assert not window.generate_button.isEnabled()
+        assert "Excel" in window.status_label.text()
+
+        close_event = DummyCloseEvent()
+        window.closeEvent(close_event)
+
+        assert close_event.ignored is True
+        assert len(warnings) == 1
+        assert "Excel" in warnings[0]
+
+        _wait_for_import(window)
+
+        assert window.progress.isHidden()
+        assert window.excel_path.isEnabled()
+        assert window.excel_browse_button.isEnabled()
+        assert window.excel_load_button.isEnabled()
+        assert window.output_path.isEnabled()
+        assert window.output_browse_button.isEnabled()
+        assert window.point_color_button.isEnabled()
+        assert window.point_opacity.isEnabled()
+        assert window.generate_button.isEnabled()
+        assert window.preview_table.rowCount() == 1
+        assert window.preview_table.item(0, 0).text() == "2"
+        assert window.preview_table.item(0, 1).text() == "Point 1"
+        assert window.output_path.text().endswith("points.kml")
+    finally:
+        timer.cancel()
+        release_import.set()
+        _wait_for_import(window)
         window.close()

@@ -16,7 +16,9 @@ After completing this plan, a user should be able to save projects without fear 
 - [x] (2026-04-11 09:15+03:00) Implemented `v2.1.1`: `src/limuzin_grid_manager/app/project.py` now writes `.lgm.json` through a sibling temporary file plus `replace()`, cleans up `.tmp` files on failure, and preserves the previous project file when replacement fails.
 - [x] (2026-04-11 09:15+03:00) Added regression coverage in `tests/test_project.py` for successful atomic saves and for a mocked `replace()` failure that proves the previous project content survives intact.
 - [x] (2026-04-11 09:15+03:00) Synced `v2.1.1` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.1.md`.
-- [ ] Implement `v2.1.2`: background Excel import in `PointsWindow`, responsive import UX, and UI smoke coverage for the new running state.
+- [x] (2026-04-11 11:20+03:00) Implemented `v2.1.2`: `src/limuzin_grid_manager/ui/points_window.py` now imports Excel in a dedicated `QThread` worker, keeps the window responsive, disables conflicting controls during import, and blocks window closing until the worker finishes.
+- [x] (2026-04-11 11:20+03:00) Added UI smoke coverage in `tests/test_ui.py` for the import-running state, background import behavior, and close blocking while Excel import is active.
+- [x] (2026-04-11 11:20+03:00) Synced `v2.1.2` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.2.md`.
 - [ ] Implement `v2.1.3`: runtime logging, global exception hooks, worker traceback logging, and user-visible crash diagnostics.
 - [ ] Implement `v2.1.4`: GitHub Actions CI for Windows validation, packaging checks, and documented release-check workflow.
 - [ ] Implement `v2.2.0`: optional local and CI code-signing path, signed release verification, and final production release checklist.
@@ -41,6 +43,9 @@ After completing this plan, a user should be able to save projects without fear 
 - Observation: `v2.1.1` could be implemented without touching UI or project schema because the entire risk lived in the final write step.
   Evidence: replacing the direct `write_text(...)` call with `_write_project_text_atomically(...)` plus two focused tests was enough to move `tests/test_project.py` from 10 to 12 passing tests while keeping the rest of the suite green at `87 passed`.
 
+- Observation: moving Excel import off the GUI thread did not require changes to the workbook parsing rules; the whole patch lived in `PointsWindow` orchestration and UI state.
+  Evidence: `src/limuzin_grid_manager/app/point_import.py` stayed untouched while `tests/test_points.py` and `tests/test_ui.py` passed together at `20 passed`.
+
 ## Decision Log
 
 - Decision: ship the hardening work as several patch releases before `v2.2.0` instead of one large change set.
@@ -63,11 +68,17 @@ After completing this plan, a user should be able to save projects without fear 
   Rationale: `v2.1.1` only needs one additional atomic write path, and a local helper keeps the patch release small while still mirroring the proven temp-file-and-replace pattern from the export services.
   Date/Author: 2026-04-11 / Codex
 
+- Decision: do not add import cancellation in `v2.1.2`; only add background execution and explicit running-state UX.
+  Rationale: the user-visible freeze is solved by moving import to a worker thread, while safe mid-read cancellation for `openpyxl` would add more risk than value to this patch release.
+  Date/Author: 2026-04-11 / Codex
+
 ## Outcomes & Retrospective
 
 The roadmap is now in motion. `v2.1.1` is implemented as the current working version and closes the most immediate project-data-loss risk: saving a project can no longer overwrite a valid `.lgm.json` with a half-written file. The observable proof is in the new regression coverage for interrupted saves and the passing validation runs (`12 passed` for `tests/test_project.py`, then `87 passed` for the full suite, plus `compileall` without errors).
 
 What remains is still the higher-level production hardening originally planned: moving Excel import off the GUI thread, adding crash logs, introducing CI, and finally wiring in code signing. The expected end-state after `v2.2.0` is unchanged from plan creation, but the first milestone now has concrete evidence instead of only intent.
+
+`v2.1.2` now closes the next operational gap: loading a workbook in `Точки из Excel` no longer freezes the window. The observable proof is the new background-import worker, the import-running UI state, and the targeted validation run `uv run --extra dev pytest tests/test_points.py tests/test_ui.py` with `20 passed`, followed by `compileall` without errors.
 
 ## Context and Orientation
 
@@ -230,3 +241,4 @@ The tests added for this plan should use stable names so future contributors can
 
 Revision note: this file was created on 2026-04-10 to turn the production-readiness audit into a staged, novice-readable ExecPlan that can be implemented release by release from `v2.1.0` to `v2.2.0`.
 Revision note: updated on 2026-04-11 after implementing `v2.1.1` so the plan now records the completed atomic-save milestone, its validation evidence, and the decision to keep the helper local to `app/project.py`.
+Revision note: updated on 2026-04-11 after implementing `v2.1.2` so the plan now records the completed responsive Excel import milestone, its UI-smoke coverage, and the decision to keep cancellation out of scope for this patch.

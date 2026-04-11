@@ -80,6 +80,24 @@ class PointsExportWorker(QObject):
         return self._cancel_requested
 
 
+class PointsImportWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, workbook_path: Path) -> None:
+        super().__init__()
+        self._workbook_path = workbook_path
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = import_points_from_excel(self._workbook_path)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.finished.emit(result)
+
+
 class PointColorButton(QPushButton):
     colorChanged = Signal(str)
 
@@ -118,6 +136,8 @@ class PointsWindow(QMainWindow):
         self._import_result: PointImportResult | None = None
         self._thread: QThread | None = None
         self._worker: PointsExportWorker | None = None
+        self._import_thread: QThread | None = None
+        self._import_worker: PointsImportWorker | None = None
         self._last_output_path: Path | None = None
 
         self._build_ui()
@@ -313,7 +333,7 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def choose_excel_file(self) -> None:
-        if self._thread is not None:
+        if self._is_busy():
             return
         initial = self._initial_excel_path()
         selected, _ = QFileDialog.getOpenFileName(
@@ -328,7 +348,7 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def load_selected_excel(self) -> None:
-        if self._thread is not None:
+        if self._is_busy():
             return
         raw_path = self.excel_path.text().strip().strip('"')
         if not raw_path:
@@ -337,10 +357,12 @@ class PointsWindow(QMainWindow):
         self.load_excel_path(Path(raw_path).expanduser())
 
     def load_excel_path(self, path: Path) -> None:
-        if self._thread is not None:
+        if self._is_busy():
             return
         workbook_path = Path(path).expanduser()
         self.excel_path.setText(str(workbook_path))
+        self._start_import(workbook_path)
+        return
         try:
             result = import_points_from_excel(workbook_path)
         except ValueError as exc:
@@ -362,7 +384,7 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def choose_output_path(self) -> None:
-        if self._thread is not None:
+        if self._is_busy():
             return
         initial = self._initial_output_path()
         selected, _ = QFileDialog.getSaveFileName(
@@ -380,7 +402,7 @@ class PointsWindow(QMainWindow):
 
     @Slot()
     def generate(self) -> None:
-        if self._thread is not None:
+        if self._is_busy():
             return
         if self._import_result is None:
             QMessageBox.warning(self, "Экспорт точек", "Сначала загрузите Excel-файл.")
@@ -436,6 +458,48 @@ class PointsWindow(QMainWindow):
         self._set_export_running(True)
         self._thread.start()
 
+    def _start_import(self, workbook_path: Path) -> None:
+        self._import_result = None
+        self._show_import_running_view(workbook_path)
+        self._update_generate_enabled()
+
+        self._import_thread = QThread(self)
+        self._import_worker = PointsImportWorker(workbook_path)
+        self._import_worker.moveToThread(self._import_thread)
+
+        self._import_thread.started.connect(self._import_worker.run)
+        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.failed.connect(self._on_import_failed)
+        self._import_worker.finished.connect(self._import_thread.quit)
+        self._import_worker.failed.connect(self._import_thread.quit)
+        self._import_thread.finished.connect(self._import_worker.deleteLater)
+        self._import_thread.finished.connect(self._import_thread.deleteLater)
+        self._import_thread.finished.connect(self._on_import_thread_finished)
+
+        self._set_import_running(True)
+        self._import_thread.start()
+
+    def _set_import_running(self, running: bool) -> None:
+        for widget in (
+            self.excel_path,
+            self.excel_browse_button,
+            self.excel_load_button,
+            self.point_color_button,
+            self.point_opacity,
+            self.output_path,
+            self.output_browse_button,
+        ):
+            widget.setEnabled(not running)
+        self.generate_button.setEnabled(not running and self._can_generate())
+        self.progress.setVisible(running)
+        if running:
+            self.progress.setRange(0, 0)
+            self.progress.setValue(0)
+            self.status_label.setText("\u0418\u043c\u043f\u043e\u0440\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0438\u0437 Excel...")
+        self.cancel_button.setVisible(False)
+        self.cancel_button.setEnabled(False)
+        self.open_output_folder_button.setEnabled(not running and self._last_output_path is not None)
+
     def _set_export_running(self, running: bool) -> None:
         for widget in (
             self.excel_path,
@@ -489,8 +553,25 @@ class PointsWindow(QMainWindow):
                 self.preview_table.setItem(row_index, column, item)
         self.preview_table.resizeRowsToContents()
 
+    def _show_import_running_view(self, workbook_path: Path) -> None:
+        self.preview_table.setRowCount(0)
+        self.summary_text.setPlainText(
+            f"\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u0443\u0435\u043c workbook: {workbook_path.name}\n"
+            "\u041d\u0435 \u0437\u0430\u043a\u0440\u044b\u0432\u0430\u0439\u0442\u0435 \u043e\u043a\u043d\u043e, "
+            "\u043f\u043e\u043a\u0430 \u0441\u0442\u0440\u043e\u043a\u0438 \u0447\u0438\u0442\u0430\u044e\u0442\u0441\u044f "
+            "\u0432 \u0444\u043e\u043d\u0435."
+        )
+        self.error_text.setPlainText(
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0441\u0442\u0440\u043e\u043a "
+            "\u0438 \u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u0435 "
+            "\u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u044e\u0442\u0441\u044f \u0432 \u0444\u043e\u043d\u0435."
+        )
+
     def _update_generate_enabled(self) -> None:
-        self.generate_button.setEnabled(self._thread is None and self._can_generate())
+        self.generate_button.setEnabled(not self._is_busy() and self._can_generate())
+
+    def _is_busy(self) -> bool:
+        return self._thread is not None or self._import_thread is not None
 
     def _can_generate(self) -> bool:
         return (
@@ -581,6 +662,48 @@ class PointsWindow(QMainWindow):
         self._set_export_running(False)
         self._update_generate_enabled()
 
+    @Slot(object)
+    def _on_import_finished(self, result: object) -> None:
+        if not isinstance(result, PointImportResult):
+            self._on_import_failed(
+                "\u0418\u043c\u043f\u043e\u0440\u0442 \u0432\u0435\u0440\u043d\u0443\u043b "
+                "\u043d\u0435\u043e\u0436\u0438\u0434\u0430\u043d\u043d\u044b\u0439 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442."
+            )
+            return
+
+        workbook_path = Path(self.excel_path.text().strip().strip('"')).expanduser()
+        self._import_result = result
+        self._settings.setValue(LAST_EXCEL_PATH_KEY, str(workbook_path))
+        self._settings.sync()
+        if not self.output_path.text().strip():
+            self.output_path.setText(str(self._suggested_output_path(workbook_path)))
+        self._update_import_view(result)
+        self.status_label.setText(
+            f"\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u043e "
+            f"\u0441\u0442\u0440\u043e\u043a: {result.total_rows}. "
+            f"\u041a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0445 \u0442\u043e\u0447\u0435\u043a: {len(result.records)}."
+        )
+        self._update_generate_enabled()
+
+    @Slot(str)
+    def _on_import_failed(self, message: str) -> None:
+        self._import_result = None
+        self._update_import_view(None, import_error=message)
+        self.status_label.setText("\u0418\u043c\u043f\u043e\u0440\u0442 \u043d\u0435 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d")
+        self._update_generate_enabled()
+        QMessageBox.warning(
+            self,
+            "\u0418\u043c\u043f\u043e\u0440\u0442 \u0442\u043e\u0447\u0435\u043a",
+            message,
+        )
+
+    @Slot()
+    def _on_import_thread_finished(self) -> None:
+        self._import_thread = None
+        self._import_worker = None
+        self._set_import_running(False)
+        self._update_generate_enabled()
+
     @Slot()
     def open_output_folder(self) -> None:
         if self._last_output_path is None:
@@ -588,6 +711,15 @@ class PointsWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._last_output_path.parent)))
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self._import_thread is not None:
+            QMessageBox.warning(
+                self,
+                "\u0418\u043c\u043f\u043e\u0440\u0442 \u0442\u043e\u0447\u0435\u043a",
+                "\u0418\u0434\u0435\u0442 \u0438\u043c\u043f\u043e\u0440\u0442 Excel. \u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c "
+                "\u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u044f.",
+            )
+            event.ignore()
+            return
         if self._thread is not None:
             QMessageBox.warning(self, "Экспорт точек", "Идет экспорт. Дождитесь завершения или нажмите «Отменить».")
             event.ignore()
