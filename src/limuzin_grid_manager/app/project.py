@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from json import JSONDecodeError
@@ -220,9 +222,8 @@ def normalize_project_path(path: str | Path) -> Path:
 
 def save_project_state(path: str | Path, state: ProjectState) -> Path:
     out_path = normalize_project_path(path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     data = project_state_to_dict(state)
-    out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_project_text_atomically(out_path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return out_path
 
 
@@ -404,3 +405,31 @@ def _require_mapping(data: object, label: str) -> Mapping[str, Any]:
     if not isinstance(data, Mapping):
         raise ValueError(f"{label}: ожидался объект JSON.")
     return data
+
+
+def _write_project_text_atomically(out_path: Path, text: str) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            delete=False,
+            dir=out_path.parent,
+            prefix=f".{out_path.name}.",
+            suffix=".tmp",
+        ) as temp_file:
+            temp_file.write(text)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+        _replace_project_file(temp_path, out_path)
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+
+
+def _replace_project_file(temp_path: Path, out_path: Path) -> None:
+    temp_path.replace(out_path)

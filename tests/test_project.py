@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from limuzin_grid_manager.app import project as project_module
 from limuzin_grid_manager.app.project import (
     CoordinateState,
     ProjectFileError,
@@ -111,6 +112,54 @@ def test_project_state_saves_export_format_id_for_geojson_and_csv(tmp_path) -> N
         assert data["options"]["export_format_id"] == expected_format_id
         assert data["options"]["export_mode"] == export_mode.value
         assert loaded.options.export_mode == export_mode
+
+
+def test_project_state_save_is_atomic_on_success(tmp_path) -> None:
+    state = ProjectState(
+        coordinates=CoordinateState(),
+        options=GridOptions(),
+        export_folder=str(tmp_path),
+        export_filename="grid.kml",
+    )
+
+    saved_path = save_project_state(tmp_path / "atomic-project", state)
+    saved_text = saved_path.read_text(encoding="utf-8")
+
+    assert saved_text.endswith("\n")
+    assert not any(path.suffix == ".tmp" for path in tmp_path.iterdir())
+
+
+def test_save_project_state_is_atomic_when_replace_fails(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original_state = ProjectState(
+        coordinates=CoordinateState(x_nw="5661000"),
+        options=GridOptions(),
+        export_folder=str(tmp_path),
+        export_filename="old.kml",
+    )
+    updated_state = ProjectState(
+        coordinates=CoordinateState(x_nw="5777000"),
+        options=GridOptions(export_mode=ExportMode.ZIP),
+        export_folder=str(tmp_path),
+        export_filename="new.zip",
+    )
+
+    saved_path = save_project_state(tmp_path / "atomic-project", original_state)
+    original_text = saved_path.read_text(encoding="utf-8")
+    temp_paths: list[object] = []
+
+    def fail_replace(temp_path, out_path) -> None:
+        temp_paths.append(temp_path)
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(project_module, "_replace_project_file", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        save_project_state(saved_path, updated_state)
+
+    assert saved_path.read_text(encoding="utf-8") == original_text
+    assert temp_paths
+    assert all(not temp_path.exists() for temp_path in temp_paths)
+    assert not any(path.suffix == ".tmp" for path in tmp_path.iterdir())
 
 
 def test_project_loader_accepts_legacy_export_mode_without_format_id(tmp_path) -> None:
