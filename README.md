@@ -1,163 +1,164 @@
 # LIMUZIN GRID MANAGER
 
-LIMUZIN GRID MANAGER is a Windows desktop application for preparing grid exports and point KML files for AlpineQuest.
+LIMUZIN GRID MANAGER - настольное Windows-приложение для подготовки сеток и точечных KML-файлов для AlpineQuest.
 
-Current version: `v2.2.0`
+Текущая версия: `v2.2.0`  
+Текущая стабильная версия: `v2.2.0`  
+Предыдущая стабильная версия: `v2.1.4`
 
-Stable accepted version: `v2.2.0`
+## Что умеет приложение
 
-Previous stable version: `v2.1.4`
+Приложение работает с координатами СК-42 / Пулково-42 в проекции Гаусса-Крюгера и поддерживает два основных сценария:
 
-## What the app does
+- построение сеток `1000x1000` и `100x100` с предпросмотром, проверками и экспортом
+- импорт точек из Excel и экспорт точечных KML-файлов
 
-The application works with SK-42 / Pulkovo-42 Gauss-Kruger coordinates in meters and supports two main workflows:
+Поддерживаемые форматы экспорта сетки:
 
-- Grid workflow: build `1000x1000` and `100x100` grids, preview them, validate the area, and export the result.
-- Points from Excel workflow: import points from a sample-first `.xlsx` file and generate a point KML file.
-
-Supported grid export formats:
-
-- `KML` as one common file
-- `ZIP` with `tile_###.kml` files for `1000x1000` tiles
+- `KML` одним общим файлом
+- `ZIP` с файлами `tile_###.kml` для квадратов `1000x1000`
 - `SVG`
 - `GeoJSON`
 - `CSV`
 
-Supported point export:
+Поддерживаемый экспорт точек:
 
-- point `KML` from the separate `Points from Excel` window
+- точечный `KML` из отдельного окна `Точки из Excel`
 
-## Key features
+## Ключевые возможности
 
-- PySide6 desktop UI for Windows
-- grids `1000x1000` and `100x100`
-- several numbering modes for `100x100`, including linear, snake, and spiral
-- custom names for big `1000x1000` tiles without renumbering small tiles
-- configurable KML styling, including fill modes for `1000x1000` and common fill for `100x100`
-- 2D preview with zoom, pan, simplified rendering for large areas, and validation summary
-- zone-aware export for areas spanning multiple Gauss-Kruger zones
-- protection against cells that cross a zone boundary inside a single tile
-- atomic export through a temporary file, progress reporting, free-space checks, and cancellation
-- strict `.lgm.json` project loading and atomic project saving
-- separate Excel import window with background import/export and runtime logging
-- Windows EXE build via PyInstaller
+- Windows GUI на PySide6
+- сетки `1000x1000` и `100x100`
+- схемы нумерации `100x100`: обычная, змейка, спираль
+- пользовательские имена больших квадратов `1000x1000` без перенумерации внутренних `100x100`
+- настраиваемый KML-стиль, включая режимы заливки для `1000x1000` и общую заливку для `100x100`
+- 2D-предпросмотр с масштабированием, панорамированием и упрощённой отрисовкой для больших областей
+- валидация экспортируемой области, зон и размеров до запуска экспорта
+- многозонный экспорт при условии, что каждая ячейка целиком лежит в одной зоне
+- атомарная запись через временный файл, проверка свободного места, прогресс и отмена долгих операций
+- строгая загрузка `.lgm.json` и безопасное сохранение проекта
+- отдельное окно импорта точек из Excel с фоновым импортом и экспортом
+- сборка `EXE` через PyInstaller
 
-## Quick start
+## Быстрый старт
 
-### Run from source
+### Запуск из исходников
 
-Requirements:
+Требования:
 
 - Windows
 - Python `>=3.11,<3.15`
 - `uv`
 
-Install dependencies:
+Установить зависимости:
 
 ```powershell
 uv sync --extra dev
 ```
 
-Run the app:
+Запустить приложение:
 
 ```powershell
 uv run limuzin-grid-manager
 ```
 
-### Build EXE
+### Сборка EXE
 
 ```powershell
 .\build_exe_windows.bat
 ```
 
-Result:
+Результат сборки:
 
 ```text
 dist/LIMUZIN_GRID_MANAGER.exe
 ```
 
-By default the EXE is unsigned. The build script also supports optional local Authenticode signing through `LGM_SIGN_*` environment variables.
+По умолчанию EXE собирается без подписи. Скрипт также поддерживает локальную Authenticode-подпись через переменные окружения `LGM_SIGN_*`.
 
-## How to use
+## Как пользоваться
 
-### Grid workflow
+### Сетки
 
-1. Enter two points of the area in SK-42 / Gauss-Kruger coordinates:
+1. Введите две точки области в координатах СК-42 / Гаусс-Крюгер:
    `NW X`, `NW Y`, `SE X`, `SE Y`
-2. Choose which grid layers to build:
-   `1000x1000`, `100x100`, or both
-3. Set rounding mode, numbering, names, and KML style if needed
-4. Check the preview and the validation tab
-5. Choose export format and output path
-6. Generate the result
+2. Выберите слои сетки:
+   `1000x1000`, `100x100` или оба сразу
+3. При необходимости настройте округление, нумерацию, имена больших квадратов и KML-стиль
+4. Проверьте результат на вкладках предпросмотра и валидации
+5. Выберите формат экспорта и путь сохранения
+6. Сгенерируйте итоговый файл
 
-### Points from Excel
+### Точки из Excel
 
-Open `Tools -> Points from Excel...`
+Откройте:
 
-The Excel workflow expects a sample-first `.xlsx` file with columns:
+```text
+Инструменты -> Точки из Excel...
+```
+
+Excel-сценарий ожидает `.xlsx`-файл по принципу sample-first с колонками:
 
 ```text
 ФИО | Дата | Координаты
 ```
 
-Coordinates are parsed from one text cell, converted from SK-42 to WGS84, and exported as point placemarks in KML.
+Координаты читаются из одной текстовой ячейки, преобразуются из СК-42 в WGS84 и экспортируются в KML как точечные placemark-объекты.
 
-## Coordinates and zones
+## Координаты и зоны
 
-- Input format: SK-42 / Pulkovo-42, Gauss-Kruger, meters
-- Input order: user enters `X/Y`
-- `pyproj` receives `Y/X`
-- KML and GeoJSON store coordinates as `lon,lat`
-- Zone formula: `zone = int(abs(Y) // 1_000_000)`
-- Supported zones: `1..32`
+- входные координаты задаются как `X/Y`
+- в `pyproj` координаты передаются как `Y/X`
+- в `KML` и `GeoJSON` координаты записываются как `lon,lat`
+- формула зоны: `zone = int(abs(Y) // 1_000_000)`
+- поддерживаемые зоны: `1..32`
 
-Multi-zone areas are supported, but only if each exported cell stays fully inside one zone. If a `1000x1000` or `100x100` cell crosses a zone boundary inside the cell, export is blocked with a clear error.
+Многозонные области поддерживаются, но экспорт блокируется, если отдельная ячейка `1000x1000` или `100x100` пересекает границу зоны внутри самой ячейки.
 
-## Project files and logs
+## Файлы проекта и журнал
 
-### Project file
+### Файл проекта
 
-The application can save and reopen working state in `.lgm.json`.
+Приложение умеет сохранять и открывать рабочее состояние в `.lgm.json`.
 
-Project file includes:
+Файл проекта включает:
 
-- bounds
-- grid options
-- numbering options
-- tile names
-- KML style
-- export settings
+- границы области
+- параметры сетки
+- параметры нумерации
+- имена больших квадратов
+- KML-стиль
+- параметры экспорта
 
-The last opened or saved project path is stored locally through `QSettings`, not inside the repository and not inside the project file itself.
+Путь к последнему открытому или сохранённому проекту хранится локально через `QSettings`, а не в репозитории и не внутри `.lgm.json`.
 
-### Runtime log
+### Журнал выполнения
 
-Unexpected runtime failures are written to:
+Необработанные ошибки выполнения пишутся в:
 
 ```text
 %LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\runtime.log
 ```
 
-If the default app-data directory is unavailable, the application uses a writable fallback directory inside the user profile.
+Если стандартная директория app-data недоступна, приложение использует резервную папку в профиле пользователя.
 
-## Development
+## Разработка
 
-### Tests
+### Тесты
 
-Run the full test suite:
+Полный набор тестов:
 
 ```powershell
 uv run --extra dev pytest
 ```
 
-Check compilation:
+Проверка компиляции:
 
 ```powershell
 uv run --extra dev python -m compileall src tests
 ```
 
-### Release-style local validation
+### Локальная проверка перед релизом
 
 ```powershell
 uv lock --offline
@@ -168,44 +169,44 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 ### GitHub Actions
 
-The repository includes two workflows:
+В репозитории есть два workflow:
 
-- `.github/workflows/ci.yml` for Windows CI on push and pull request
-- `.github/workflows/release-windows.yml` for rebuilding `LIMUZIN_GRID_MANAGER.exe` as a GitHub Actions artifact
+- `.github/workflows/ci.yml` для Windows CI на `push` и `pull request`
+- `.github/workflows/release-windows.yml` для пересборки `LIMUZIN_GRID_MANAGER.exe` как GitHub Actions artifact
 
-These workflows complement local validation, but they do not replace manual user testing before release publication.
+Эти workflow дополняют локальную проверку, но не заменяют ручное пользовательское тестирование перед публикацией релиза.
 
-## Repository structure
+## Структура репозитория
 
 ```text
 .
 ├── src/limuzin_grid_manager/
-│   ├── app/                      # export, projects, point import/export, runtime helpers
-│   ├── core/                     # geometry, CRS, zones, KML/SVG/GeoJSON/CSV, numbering
-│   └── ui/                       # PySide6 windows, preview, themes
-├── tests/                        # automated tests
-├── versions/                     # version notes and archived planning documents
-│   └── roadmaps_archive/         # historical roadmaps and completed execution plans
-├── GRIDBASE.md                   # technical base documentation
-├── USER_GUIDE.md                 # end-user guide
-├── GITHUB.md                     # git, release, and publication rules
-├── build_exe_windows.bat         # Windows EXE build
-├── pyproject.toml                # package metadata and dependencies
-└── uv.lock                       # dependency lock file
+│   ├── app/                      # экспорт, проекты, импорт/экспорт точек, runtime-сервисы
+│   ├── core/                     # геометрия, CRS, зоны, KML/SVG/GeoJSON/CSV, нумерация
+│   └── ui/                       # окна PySide6, предпросмотр, темы
+├── tests/                        # автотесты
+├── versions/                     # заметки по версиям и архив планов
+│   └── roadmaps_archive/         # исторические roadmap-файлы и завершённые планы
+├── GRIDBASE.md                   # техническая база проекта
+├── USER_GUIDE.md                 # руководство пользователя
+├── GITHUB.md                     # правила git, release и публикации
+├── build_exe_windows.bat         # сборка Windows EXE
+├── pyproject.toml                # метаданные пакета и зависимости
+└── uv.lock                       # lock-файл зависимостей
 ```
 
-## Documentation map
+## Карта документации
 
-- [`USER_GUIDE.md`](USER_GUIDE.md) - end-user instructions and manual check flow
-- [`GRIDBASE.md`](GRIDBASE.md) - technical source of truth for behavior and architecture
-- [`GITHUB.md`](GITHUB.md) - release workflow, CI, tag, and publication rules
-- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) - version index
-- [`versions/v2.2.0.md`](versions/v2.2.0.md) - release notes for the current stable version
-- [`versions/roadmaps_archive/roadmap.md`](versions/roadmaps_archive/roadmap.md) - archived roadmap up to `v1.0`
-- [`versions/roadmaps_archive/ROADMAPv2.md`](versions/roadmaps_archive/ROADMAPv2.md) - archived roadmap for `v1.0 -> v2.0`
-- [`versions/roadmaps_archive/ROADMAPv2.1.md`](versions/roadmaps_archive/ROADMAPv2.1.md) - archived roadmap for `v2.0 -> v2.1`
-- [`versions/roadmaps_archive/FIXPROD.md`](versions/roadmaps_archive/FIXPROD.md) - archived production hardening plan up to `v2.2.0`
+- [`USER_GUIDE.md`](USER_GUIDE.md) - пользовательские сценарии и ручная проверка
+- [`GRIDBASE.md`](GRIDBASE.md) - техническая база по архитектуре и поведению
+- [`GITHUB.md`](GITHUB.md) - правила git, CI, tag и release
+- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) - индекс версий
+- [`versions/v2.2.0.md`](versions/v2.2.0.md) - заметки по текущей стабильной версии
+- [`versions/roadmaps_archive/roadmap.md`](versions/roadmaps_archive/roadmap.md) - архив roadmap до `v1.0`
+- [`versions/roadmaps_archive/ROADMAPv2.md`](versions/roadmaps_archive/ROADMAPv2.md) - архив roadmap для `v1.0 -> v2.0`
+- [`versions/roadmaps_archive/ROADMAPv2.1.md`](versions/roadmaps_archive/ROADMAPv2.1.md) - архив roadmap для `v2.0 -> v2.1`
+- [`versions/roadmaps_archive/FIXPROD.md`](versions/roadmaps_archive/FIXPROD.md) - архив плана production-hardening до `v2.2.0`
 
-## License
+## Лицензия
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. См. [`LICENSE`](LICENSE).
