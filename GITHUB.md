@@ -7,17 +7,32 @@
 - GitHub: https://github.com/VLETVKONTENT/limuzin-grid-manager
 - Видимость: репозиторий готовится к публичной поддерживаемой публикации.
 - Основная ветка: `main`
-- Теги версий: `vX.Y.Z`, например `v2.1.4`
+- Теги версий: `vX.Y.Z`, например `v2.2.0`
 - Готовый `LIMUZIN_GRID_MANAGER.exe` не хранится в git-истории и публикуется как GitHub Release asset
 
-## Новые workflows с v2.1.4
+## Workflows с v2.2.0
 
 В репозитории есть два штатных workflow:
 
 - `.github/workflows/ci.yml` (`CI`) — автоматически запускается для push и pull request, работает на Windows и выполняет `uv sync --extra dev --locked`, `uv run --extra dev pytest`, `uv run --extra dev python -m compileall src tests` и `uv build`
-- `.github/workflows/release-windows.yml` (`Release Windows EXE`) — запускается вручную через `workflow_dispatch` или автоматически по тегу `v*`, собирает unsigned `dist/LIMUZIN_GRID_MANAGER.exe` через `build_exe_windows.bat` и публикует EXE как GitHub Actions artifact
+- `.github/workflows/release-windows.yml` (`Release Windows EXE`) — запускается вручную через `workflow_dispatch` или автоматически по тегу `v*`, собирает `dist/LIMUZIN_GRID_MANAGER.exe` через `build_exe_windows.bat` и публикует EXE как GitHub Actions artifact
 
-Эти workflow не заменяют ручной пользовательский тест. Они добавляют автоматическую дисциплину между локальной подготовкой и публичным релизом.
+Эти workflow не заменяют ручной пользовательский тест. Они добавляют автоматическую дисциплину между локальной подготовкой и публикацией версии.
+
+## Локальная и CI-подпись EXE
+
+Локальная сборка по умолчанию остается unsigned. Это удобно для обычной разработки и smoke-проверок. При необходимости можно дополнительно проверить signing-пайплайн локальным `.pfx`, включая self-signed сертификат для собственных машин.
+
+Для локальной подписи `build_exe_windows.bat` понимает env-переменные:
+
+- `LGM_SIGN_EXE=1` — включить этап подписи после PyInstaller
+- `LGM_SIGN_PFX_PATH` — путь к `.pfx`-сертификату вне репозитория
+- `LGM_SIGN_PFX_PASSWORD` — пароль к `.pfx`
+- `LGM_SIGN_TIMESTAMP_URL` — optional URL timestamp-сервера; по умолчанию используется `http://timestamp.digicert.com`
+
+Если `LGM_SIGN_EXE=1`, скрипт до сборки делает fast-fail preflight: проверяет наличие `.pfx`, пароля и `signtool.exe`. После подписи он сразу запускает `Get-AuthenticodeSignature` и считает сборку успешной только при `Status : Valid`.
+
+Подпись EXE в GitHub Actions для текущего релиза не используется. Если нужно проверить signing-путь, это делается локально через `build_exe_windows.bat` и собственный `.pfx`.
 
 ## Главное правило
 
@@ -69,15 +84,28 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - приложение запускается хотя бы smoke-проходом
 - рабочее дерево не содержит лишних build/cache-артефактов
 
+Если вы хотите дополнительно проверить signing-пайплайн, соберите signed EXE и проверьте:
+
+```powershell
+$env:LGM_SIGN_EXE='1'
+$env:LGM_SIGN_PFX_PATH='C:\path\to\certificate.pfx'
+$env:LGM_SIGN_PFX_PASSWORD='***'
+.\build_exe_windows.bat
+Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
+```
+
+Если подпись включена, ожидается `Status : Valid`. Для проекта допустимо выпускать версию и без коммерческого публичного сертификата, но тогда нужно честно понимать, что внешнего доверия SmartScreen такая схема не дает.
+
 ## Что должно быть готово перед публикацией
 
-Перед тем как создавать публичный релиз, различаем три разных состояния:
+Перед тем как создавать релиз, различаем четыре разных состояния:
 
 - `Локальная smoke-проверка пройдена` — офлайн-команды выше завершились успешно, EXE собран локально и пользователь принял ручной тест
 - `CI green` — после commit/push workflow `CI` завершился успешно на GitHub
 - `Artifact build available` — workflow `Release Windows EXE` успешно собрал и сохранил `LIMUZIN_GRID_MANAGER.exe` как GitHub Actions artifact
+- `Signed EXE verified (optional)` — либо локальный, либо GitHub Actions EXE проходит `Get-AuthenticodeSignature` со статусом `Valid`
 
-Без всех трех пунктов релиз не считается дисциплинированно подготовленным.
+Для текущего процесса обязательны первые три пункта. Четвертый пункт выполняется, если вы используете локальный или CI signing-flow.
 
 ## Что делать после подтверждения пользователя
 
@@ -98,7 +126,7 @@ gh workflow run release-windows.yml --ref main --repo VLETVKONTENT/limuzin-grid-
 gh run list --workflow release-windows.yml --limit 5 --repo VLETVKONTENT/limuzin-grid-manager
 ```
 
-Когда `CI` зеленый и EXE-артефакт доступен, можно оформить релиз:
+Когда `CI` зеленый и EXE-артефакт доступен, можно оформить релиз. Если signing использовался, перед релизом также полезно проверить `Valid`:
 
 ```powershell
 git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -118,6 +146,7 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 - Не создавать GitHub Release без подтверждения пользователя
 - Не считать локальную сборку заменой GitHub Actions CI
 - Не считать зеленый CI заменой ручного пользовательского теста
+- Не выдавать unsigned или self-signed EXE за externally trusted публичный релиз без пояснения ограничений
 - Не коммитить временные файлы: `.venv/`, `build/`, `dist/`, `.pytest_cache/`, `__pycache__/`, `*.spec`
 - Не добавлять EXE в git, если только пользователь прямо не попросит хранить бинарник в репозитории
 
@@ -134,9 +163,9 @@ gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 
 ## Текущий статус
 
-- Текущая рабочая версия: `v2.1.4`
-- Текущая принятая стабильная версия: `v2.1.4`
-- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.1.4
-- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.1.3
+- Текущая рабочая версия: `v2.2.0`
+- Текущая принятая стабильная версия: `v2.2.0`
+- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.2.0
+- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.1.4
 - Основной источник технического контекста: `GRIDBASE.md`
 - История версий: `versions/GRIDVERSIONS.md`

@@ -51,7 +51,7 @@ LIMUZIN GRID MANAGER - Windows-приложение для генерации с
 - Начиная с `v2.1.1`, сохранение `.lgm.json` выполняется атомарно через временный файл рядом с целевым проектом: если запись или `replace()` завершается ошибкой, временный `.tmp` удаляется, а предыдущий файл проекта остается нетронутым.
 - Начиная с `v2.1.2`, импорт `.xlsx` в окне `Точки из Excel` выполняется в отдельном worker-потоке: окно остается отзывчивым, на время импорта показывает running state, отключает конфликтующие элементы и не дает закрыть себя до завершения чтения workbook.
 - Начиная с `v2.1.3`, runtime-ошибки и падения worker-ов пишут traceback в `runtime.log` внутри локального app-data каталога приложения; пользовательские сообщения об ошибках показывают путь к журналу, чтобы сбой можно было диагностировать без внутреннего traceback в UI.
-- Начиная с `v2.1.4`, репозиторий содержит GitHub Actions workflows `.github/workflows/ci.yml` и `.github/workflows/release-windows.yml`: первый автоматически валидирует push/pull request на Windows через `pytest`, `compileall` и `uv build`, второй вручную или по тегу `v*` пересобирает unsigned `LIMUZIN_GRID_MANAGER.exe` и публикует его как Actions artifact для release-дисциплины до этапа подписи.
+- Начиная с `v2.2.0`, репозиторий содержит GitHub Actions workflows `.github/workflows/ci.yml` и `.github/workflows/release-windows.yml`: первый автоматически валидирует push/pull request на Windows через `pytest`, `compileall` и `uv build`, второй вручную или по тегу `v*` пересобирает `LIMUZIN_GRID_MANAGER.exe` и публикует его как Actions artifact. Версия `v2.2.0` принята после ручного пользовательского теста; signing-поток в проекте остается optional и проверяется локально через собственный/self-signed `.pfx`.
 
 Важное правило KML-стиля:
 
@@ -75,8 +75,8 @@ LIMUZIN GRID MANAGER - Windows-приложение для генерации с
 - `versions/GRIDVERSIONS.md` — индекс версий проекта.
 - `versions/vX.Y.Z.md` — подробные заметки по каждой версии.
 - `.github/workflows/ci.yml` — Windows CI для push/pull request: `uv sync`, `pytest`, `compileall`, `uv build`.
-- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка unsigned `LIMUZIN_GRID_MANAGER.exe` как GitHub Actions artifact.
-- `build_exe_windows.bat` — сборка Windows EXE через `uv` и PyInstaller.
+- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка `LIMUZIN_GRID_MANAGER.exe` как GitHub Actions artifact.
+- `build_exe_windows.bat` — сборка Windows EXE через `uv` и PyInstaller с optional Authenticode signing через `LGM_SIGN_*`.
 - `dist/LIMUZIN_GRID_MANAGER.exe` — готовый собранный EXE.
 - `app.manifest`, `version_info.txt`, `icon.ico`, `icon.png` — ресурсы Windows-сборки и иконка.
 

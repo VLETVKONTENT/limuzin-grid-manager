@@ -1,6 +1,6 @@
 [project]
 name = "limuzin-grid-manager"
-version = "2.1.4"
+version = "2.2.0"
 description = "Windows KML, SVG, GeoJSON and CSV grid generator using SK-42 / Pulkovo-42 Gauss-Kruger coordinates."
 readme = "README.md"
 license = "MIT"

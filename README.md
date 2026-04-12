@@ -1,8 +1,8 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v2.1.4`
+**Текущая версия:** `v2.2.0`
 
-**Статус:** текущая принятая стабильная версия после ручного пользовательского теста — `v2.1.4`
+**Статус:** текущая принятая стабильная версия после ручного пользовательского теста — `v2.2.0`, предыдущая стабильная версия — `v2.1.4`
 
 **Платформа:** Windows
 
@@ -261,17 +261,18 @@ uv run limuzin-grid-manager
 dist/LIMUZIN_GRID_MANAGER.exe
 ```
 
-Начиная с `v2.1.4`, репозиторий также содержит GitHub Actions workflows:
+Начиная с `v2.2.0`, репозиторий также содержит GitHub Actions workflows:
 
 - `.github/workflows/ci.yml` — Windows CI для push и pull request с `pytest`, `compileall` и `uv build`;
-- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка unsigned EXE с публикацией артефакта в Actions.
+- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка EXE с публикацией артефакта в Actions.
 
 Скрипт сборки:
 
 - синхронизирует окружение через `uv`;
 - находит данные `pyproj` / PROJ;
 - запускает PyInstaller;
-- добавляет иконку, manifest, version resource и необходимые данные для работы преобразования координат.
+- добавляет иконку, manifest, version resource и необходимые данные для работы преобразования координат;
+- при `LGM_SIGN_EXE=1` проверяет наличие PFX-файла, пароля и `signtool.exe`, затем подписывает EXE и валидирует его через `Get-AuthenticodeSignature`.
 
 ## Тестирование
 
@@ -287,7 +288,7 @@ uv run --extra dev pytest
 uv run --extra dev python -m compileall src tests
 ```
 
-Для репозитория `v2.1.4` автоматическая проверка тех же команд теперь выполняется и в GitHub Actions на Windows для Python `3.11` и `3.12`. Для проверки воспроизводимости упаковки доступен отдельный workflow сборки EXE-артефакта.
+Для репозитория `v2.2.0` автоматическая проверка тех же команд теперь выполняется и в GitHub Actions на Windows для Python `3.11` и `3.12`. Для проверки воспроизводимости упаковки и подписи доступен отдельный workflow сборки EXE-артефакта.
 
 Релизная проверка перед ручным тестом:
 
@@ -297,6 +298,18 @@ uv run --offline --extra dev pytest
 uv run --offline --extra dev python -m compileall src tests
 $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 ```
+
+Если вы хотите дополнительно проверить signing-пайплайн, поверх обычной локальной сборки можно собрать Authenticode-signed EXE. Для этого подходит локальный `.pfx`, включая self-signed сертификат для собственного теста; покупка публичного коммерческого сертификата не является обязательным требованием проекта. Если сертификат уже доступен локально, используйте те же env-переменные, что и в `build_exe_windows.bat`, а затем проверьте статус подписи:
+
+```powershell
+$env:LGM_SIGN_EXE='1'
+$env:LGM_SIGN_PFX_PATH='C:\path\to\certificate.pfx'
+$env:LGM_SIGN_PFX_PASSWORD='***'
+.\build_exe_windows.bat
+Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
+```
+
+Если подпись включена, ожидается `Status : Valid`. Self-signed подпись подтверждает, что release-пайплайн и локальная проверка работают корректно, но не заменяет доверие публичного CA-сертификата для чужих машин и SmartScreen. Если signing-переменные не заданы, скрипт по-прежнему соберет unsigned EXE для локального теста.
 
 Для `v2.0.0` проверено:
 
@@ -358,7 +371,7 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 - [`GITHUB.md`](GITHUB.md) — правила commit/push/tag/release и проверки перед публичным репозиторием.
 - [`roadmap.md`](roadmap.md) — история движения к стабильной версии `v1.0`.
 - [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v2.1.4.md`](versions/v2.1.4.md) — заметки текущей принятой версии.
+- [`versions/v2.2.0.md`](versions/v2.2.0.md) — заметки текущей принятой стабильной версии.
 
 ## Лицензия
 
@@ -372,13 +385,13 @@ $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 
 ## Текущая версия
 
-Текущая рабочая версия: `v2.1.4`.
+Текущая версия: `v2.2.0`.
 
-Текущая принятая версия: `v2.1.4`.
+Текущая принятая версия: `v2.2.0`.
 
-Предыдущая стабильная версия: `v2.1.3`.
+Предыдущая стабильная версия: `v2.1.4`.
 
-Изменения текущей рабочей версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
-Изменения текущей принятой версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
+Изменения текущей принятой версии описаны в [`versions/v2.2.0.md`](versions/v2.2.0.md).
+Изменения предыдущей стабильной версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
 
 Готовый EXE для публикации должен прикрепляться к GitHub Release как asset, а не храниться в git-истории.

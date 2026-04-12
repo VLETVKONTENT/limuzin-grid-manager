@@ -26,7 +26,10 @@ After completing this plan, a user should be able to save projects without fear 
 - [x] (2026-04-11 14:58+03:00) Implemented `v2.1.4`: added `.github/workflows/ci.yml` for Windows validation on push and pull request and `.github/workflows/release-windows.yml` for manual or tag-triggered EXE artifact builds.
 - [x] (2026-04-11 14:58+03:00) Updated release-process documentation in `GITHUB.md` so the checklist now distinguishes local smoke validation, green CI, and an available EXE artifact from Actions before tag/release publication.
 - [x] (2026-04-11 14:58+03:00) Synced `v2.1.4` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `uv.lock`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.1.4.md`.
-- [ ] Implement `v2.2.0`: optional local and CI code-signing path, signed release verification, and final production release checklist.
+- [x] (2026-04-12 11:40+03:00) Implemented the `v2.2.0` signing gate in `build_exe_windows.bat`: unsigned builds still work by default, while `LGM_SIGN_EXE`, `LGM_SIGN_PFX_PATH`, `LGM_SIGN_PFX_PASSWORD`, and optional `LGM_SIGN_TIMESTAMP_URL` now enable Authenticode signing with preflight validation and post-sign `Get-AuthenticodeSignature` verification.
+- [x] (2026-04-12 11:40+03:00) Kept `.github/workflows/release-windows.yml` as a reproducible unsigned EXE artifact build for tag or manual runs, while local `build_exe_windows.bat` remains the supported place to validate optional Authenticode signing.
+- [x] (2026-04-12 11:40+03:00) Synced `v2.2.0` working-version metadata and release docs in `pyproject.toml`, `src/limuzin_grid_manager/__init__.py`, `version_info.txt`, `README.md`, `USER_GUIDE.md`, `GRIDBASE.md`, `GITHUB.md`, `roadmap.md`, `versions/GRIDVERSIONS.md`, and `versions/v2.2.0.md`.
+- [x] (2026-04-12 11:33+03:00) Final `v2.2.0` acceptance completed: manual user testing passed, a local self-signed `.pfx` was used to verify the Authenticode path with `Status : Valid`, and `v2.2.0` was promoted from working version to accepted stable release without requiring a commercial public certificate.
 
 ## Surprises & Discoveries
 
@@ -62,6 +65,15 @@ After completing this plan, a user should be able to save projects without fear 
 
 - Observation: bumping the package version also updates the local editable package entry in `uv.lock`, so release synchronization for this repository should include the lock file even when dependencies stay the same.
   Evidence: after changing the project to `2.1.4`, `uv.lock` changed `limuzin-grid-manager` from `version = "2.1.3"` to `version = "2.1.4"`.
+
+- Observation: nested `cmd` execution needs `call build_exe_windows.bat` to preserve the non-zero exit code from the new signing preflight in every parent batch context.
+  Evidence: `cmd /v:on /c "set LGM_SIGN_EXE=1&& call build_exe_windows.bat & echo EXITCODE=!errorlevel! & exit /b !errorlevel!"` printed `EXITCODE=1` after the expected `LGM_SIGN_PFX_PATH is not set` failure.
+
+- Observation: the new default developer path stays honest about trust status without breaking local packaging.
+  Evidence: `.\build_exe_windows.bat` printed `Unsigned EXE is ready: dist\LIMUZIN_GRID_MANAGER.exe`, and `Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List ...` reported `Status : NotSigned`.
+
+- Observation: the signing pipeline can be validated locally without buying a public CA certificate, as long as the `.pfx` is trusted on the signing machine.
+  Evidence: after creating a self-signed code-signing certificate and importing it into `CurrentUser\TrustedPublisher` and `CurrentUser\Root`, `Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe` returned `Status : Valid`.
 
 ## Decision Log
 
@@ -105,17 +117,25 @@ After completing this plan, a user should be able to save projects without fear 
   Rationale: the workflows stay self-explanatory, depend on fewer external action interfaces, and remain easy to reproduce locally from the same commands shown in the documentation.
   Date/Author: 2026-04-11 / Codex
 
+- Decision: keep the local signing interface path-based (`LGM_SIGN_PFX_PATH`) while GitHub Actions reconstructs a temporary `.pfx` from base64 secrets.
+  Rationale: local release engineering is simplest when it points at an existing certificate file, while GitHub-hosted runners cannot safely rely on checked-in files and therefore need an ephemeral reconstruction path.
+  Date/Author: 2026-04-12 / Codex
+
+- Decision: invoke `build_exe_windows.bat` through `call` in the release workflow's `cmd` step.
+  Rationale: `call` preserves the signing-preflight exit code in nested batch contexts and makes the workflow failure semantics explicit instead of relying on shell-specific batch chaining behavior.
+  Date/Author: 2026-04-12 / Codex
+
+- Decision: accept `v2.2.0` without requiring a commercial public code-signing certificate.
+  Rationale: the user completed manual acceptance testing, the repository now has a working optional Authenticode pipeline, and the project owner explicitly chose not to pay for a public certificate; the documentation now reflects that self-signed or local signing is a supported validation path rather than a release blocker.
+  Date/Author: 2026-04-12 / Codex
+
 ## Outcomes & Retrospective
 
-The roadmap is now in motion. `v2.1.1` is implemented as the current working version and closes the most immediate project-data-loss risk: saving a project can no longer overwrite a valid `.lgm.json` with a half-written file. The observable proof is in the new regression coverage for interrupted saves and the passing validation runs (`12 passed` for `tests/test_project.py`, then `87 passed` for the full suite, plus `compileall` without errors).
+The roadmap is now implemented through the intended production-hardening arc. `v2.1.1` eliminated the most immediate project-data-loss risk by moving `.lgm.json` saves to an atomic temp-file-and-replace flow. `v2.1.2` removed the Excel-import freeze by moving workbook loading onto a background worker. `v2.1.3` made failures supportable through runtime logs and traceback-aware diagnostics. `v2.1.4` introduced repository-native Windows CI plus reproducible EXE artifact builds.
 
-What remains is still the higher-level production hardening originally planned: moving Excel import off the GUI thread, adding crash logs, introducing CI, and finally wiring in code signing. The expected end-state after `v2.2.0` is unchanged from plan creation, but the first milestone now has concrete evidence instead of only intent.
+`v2.2.0` now closes the code-path side of the final credibility gap: the local build and release pipeline can sign a Windows EXE without changing the everyday developer experience. Local `build_exe_windows.bat` runs still produce unsigned artifacts unless signing is explicitly requested, but the same script can now fail fast on missing certificate inputs, sign with `signtool`, and reject the result unless `Get-AuthenticodeSignature` returns `Valid`. GitHub Actions remains responsible for reproducible unsigned EXE artifacts, while signing validation stays local by project choice.
 
-`v2.1.2` now closes the next operational gap: loading a workbook in `Точки из Excel` no longer freezes the window. The observable proof is the new background-import worker, the import-running UI state, and the targeted validation run `uv run --extra dev pytest tests/test_points.py tests/test_ui.py` with `20 passed`, followed by `compileall` without errors.
-
-`v2.1.3` closes the supportability gap that remained after the UI became responsive: failures now leave behind actionable diagnostics instead of only transient dialogs. The observable proof is the new `runtime.log`, the exception-hook tests in `tests/test_runtime.py`, the UI regression that captures the log path from a failed Excel import, and the full-suite validation moving to `91 passed`.
-
-`v2.1.4` closes the automation gap that remained after the app itself became safer to run and support. The repository now has a Windows CI gate for push and pull request validation plus a dedicated workflow that rebuilds the unsigned EXE and publishes it as an Actions artifact. The observable proof is the new workflow pair in `.github/workflows`, the updated release procedure in `GITHUB.md`, and the local validation run staying green at `91 passed`, `compileall` without errors, and `uv build` producing the `2.1.4` wheel and source distribution.
+The roadmap is now operationally closed for this repository. `v2.2.0` was manually tested by the user, the optional signing pipeline was verified end-to-end with a local self-signed `.pfx`, and the release line is now accepted as stable. The project keeps honest limitations: a self-signed certificate proves the local Authenticode path works, but it does not provide the third-party trust of a commercial public certificate. That trade-off is now intentional project policy rather than an unresolved blocker.
 
 ## Context and Orientation
 
@@ -153,9 +173,9 @@ Also add `.github/workflows/release-windows.yml` as a manual or tag-triggered wo
 
 ### v2.2.0: Signed Public Release Gate
 
-This minor release closes the final credibility gap for public distribution. Extend `build_exe_windows.bat` so it still builds unsigned EXEs by default, but can also perform Authenticode signing when a secure set of environment variables is present. The signing stage must be optional for everyday development and mandatory for the final public release flow. Do not commit certificates, private keys, or password files. The script should fail fast with a clear message if signing is requested but the required secrets are missing.
+This minor release closes the final credibility gap for public distribution. `build_exe_windows.bat` now still builds unsigned EXEs by default, but it can also perform Authenticode signing when `LGM_SIGN_EXE=1`, `LGM_SIGN_PFX_PATH`, and `LGM_SIGN_PFX_PASSWORD` are present. The signing stage remains optional for everyday development and mandatory for the final public release flow. Certificates, private keys, and password files must stay outside git. The script now fails fast with a clear message if signing is requested but the PFX path, password, or `signtool.exe` are missing, and it rejects the result unless `Get-AuthenticodeSignature` reports `Valid`.
 
-In the repository automation, extend the Windows release workflow so a signed tag build can happen on GitHub Actions when the necessary secrets are configured. If the repository owner prefers local signing only, the workflow should build the unsigned artifact and the documented release procedure in `GITHUB.md` should describe the local signing step explicitly. The final acceptance target for `v2.2.0` is concrete: the built `dist\LIMUZIN_GRID_MANAGER.exe` must pass `Get-AuthenticodeSignature`, the release notes must record that the public EXE is signed, and the normal regression suite must still pass. `versions/v2.2.0.md` should act as the public production-hardening summary that ties the whole sequence together.
+In repository automation, `.github/workflows/release-windows.yml` remains an unsigned EXE artifact build on GitHub Actions. The release procedure in `GITHUB.md` now describes local signing explicitly for teams that want to validate Authenticode with their own `.pfx`. The acceptance target for `v2.2.0` remains concrete: the local `dist\LIMUZIN_GRID_MANAGER.exe` can pass `Get-AuthenticodeSignature` when signing is enabled, and the normal regression suite must still pass. `versions/v2.2.0.md` now acts as the production-hardening summary for this last milestone.
 
 ## Concrete Steps
 
@@ -239,7 +259,7 @@ Completed on 2026-04-11. The observed outcome was:
 
 The repository now contains `.github/workflows/ci.yml` and `.github/workflows/release-windows.yml`, while the generated `dist` package artifacts remain untracked build output.
 
-For `v2.2.0`, add the signing hooks and the final release procedure, then run:
+For `v2.2.0`, the signing hooks and final release procedure are now implemented. To validate them, run:
 
     .\build_exe_windows.bat
     Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
@@ -256,23 +276,27 @@ If signing is enabled for the run, the expected outcome is `Status : Valid`. If 
 
 `v2.1.4` is accepted when a pull request or push to the repository can trigger an automated Windows validation run that executes tests, compile checks, and packaging checks without manual desktop intervention.
 
-`v2.2.0` is accepted only when the final public EXE is signed and the signature is independently verifiable with Windows tooling. The normal regression suite, package build, and EXE build must still pass, and no certificate material may be added to git.
+`v2.2.0` is accepted when the normal regression suite, package build, EXE build, and manual user testing all pass, and when the optional signing path has been validated at least once with `Get-AuthenticodeSignature` returning `Valid`. Certificate material must stay outside git, and a commercial public certificate is optional rather than mandatory.
 
 ## Idempotence and Recovery
 
 Each milestone is designed to be independently releasable and safely repeatable. If a milestone is interrupted before the version bump, leave the version metadata unchanged and continue the implementation on the same branch. If the atomic save work is interrupted, the helper must clean up its temporary file so rerunning the same save path behaves normally. If the background import work is interrupted, restarting the application should be sufficient; no persistent state should be mutated during import. If runtime logging misbehaves, the fallback is to preserve the old application behavior while keeping the log initialization additive and isolated in `app/runtime.py`.
 
-The CI milestone is safe to re-run because workflow files are declarative. The signing milestone is the only one with external risk. The certificate file must always stay outside git, and any temporary certificate material reconstructed on CI runners must be deleted before job exit. If signing secrets are not yet available, `v2.2.0` must not be tagged as the final public production release; keep the code path merged, but do not claim the trust problem is closed until `Get-AuthenticodeSignature` returns `Valid`.
+The CI milestone is safe to re-run because workflow files are declarative. The signing milestone is the only one with external risk. The certificate file must always stay outside git, and any temporary certificate material reconstructed on CI runners must be deleted before job exit. If signing secrets are not available, the repository can still publish `v2.2.0` as its accepted stable version; the only requirement is that documentation stays honest about whether the distributed EXE is unsigned, self-signed, or signed with a third-party-trusted certificate.
 
 ## Artifacts and Notes
 
 The current baseline evidence for this plan is:
 
-    uv run --extra dev pytest
-    ...
-    ============================= 91 passed in 2.84s ==============================
+    uv lock --offline
+    Resolved 22 packages in 111ms
+    Updated limuzin-grid-manager v2.1.4 -> v2.2.0
 
-    uv run --extra dev python -m compileall src tests
+    uv run --offline --extra dev pytest
+    ...
+    ============================= 91 passed in 5.27s ==============================
+
+    uv run --offline --extra dev python -m compileall src tests
     Listing 'src'...
     Listing 'src\\limuzin_grid_manager'...
     Listing 'tests'...
@@ -280,22 +304,34 @@ The current baseline evidence for this plan is:
     uv build
     Building source distribution...
     Building wheel from source distribution...
-    Successfully built dist\\limuzin_grid_manager-2.1.4.tar.gz
-    Successfully built dist\\limuzin_grid_manager-2.1.4-py3-none-any.whl
+    Successfully built dist\\limuzin_grid_manager-2.2.0.tar.gz
+    Successfully built dist\\limuzin_grid_manager-2.2.0-py3-none-any.whl
 
-    git status --short
+    .\build_exe_windows.bat
+    Building unsigned EXE. Set LGM_SIGN_EXE=1 with signing variables for the final public release.
+    Unsigned EXE is ready: dist\LIMUZIN_GRID_MANAGER.exe
+    This artifact is suitable for local testing, but not for the final public release.
+
+    Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
+    Status            : NotSigned
+    SignerCertificate :
+
+    git status --short --branch
+    ## main...origin/main
+     M .github/workflows/release-windows.yml
+     M FIXPROD.md
      M GITHUB.md
      M GRIDBASE.md
      M README.md
      M USER_GUIDE.md
+     M build_exe_windows.bat
      M pyproject.toml
      M roadmap.md
      M src/limuzin_grid_manager/__init__.py
      M uv.lock
      M version_info.txt
      M versions/GRIDVERSIONS.md
-    ?? .github/
-    ?? versions/v2.1.4.md
+    ?? versions/v2.2.0.md
 
 The code locations that motivated the first two fixes are:
 
@@ -315,7 +351,7 @@ In `src/limuzin_grid_manager/ui/points_window.py`, define a new `PointsImportWor
 
 In `src/limuzin_grid_manager/app/runtime.py`, define stable startup helpers. The minimum interface should include a logging initializer and an exception-hook installer, for example `configure_runtime_logging() -> Path` and `install_exception_hooks() -> None`. `src/limuzin_grid_manager/__main__.py` must call them before `MainWindow()` is shown.
 
-In `.github/workflows/ci.yml`, the primary job now runs Windows validation with `uv` across Python `3.11` and `3.12`. In `.github/workflows/release-windows.yml`, the primary job now builds the EXE artifact on Windows with Python `3.11` and uploads `dist\LIMUZIN_GRID_MANAGER.exe`. In `build_exe_windows.bat`, the future `v2.2.0` signing stage must still be additive and environment-variable-driven so normal unsigned local builds continue to work.
+In `.github/workflows/ci.yml`, the primary job now runs Windows validation with `uv` across Python `3.11` and `3.12`. In `.github/workflows/release-windows.yml`, the primary job builds the EXE artifact on Windows with Python `3.11` and uploads `dist\LIMUZIN_GRID_MANAGER.exe`. In `build_exe_windows.bat`, the `v2.2.0` signing stage is additive and environment-variable-driven so normal unsigned local builds continue to work; the stable local interface is `LGM_SIGN_EXE`, `LGM_SIGN_PFX_PATH`, `LGM_SIGN_PFX_PASSWORD`, and optional `LGM_SIGN_TIMESTAMP_URL`.
 
 The tests added for this plan should use stable names so future contributors can find them quickly. Recommended additions are `test_save_project_state_is_atomic_when_replace_fails` in `tests/test_project.py`, `test_points_window_import_running_state_disables_controls` in `tests/test_ui.py`, and a focused runtime logging test in a new `tests/test_runtime.py` if the logging helpers become large enough to deserve direct coverage.
 
@@ -324,3 +360,5 @@ Revision note: updated on 2026-04-11 after implementing `v2.1.1` so the plan now
 Revision note: updated on 2026-04-11 after implementing `v2.1.2` so the plan now records the completed responsive Excel import milestone, its UI-smoke coverage, and the decision to keep cancellation out of scope for this patch.
 Revision note: updated on 2026-04-11 after implementing `v2.1.3` so the plan now records the completed crash-logging milestone, its runtime/UI diagnostics coverage, and the decision to centralize logging in `app/runtime.py`.
 Revision note: updated on 2026-04-11 after implementing `v2.1.4` so the plan now records the completed GitHub Actions milestone, the release-discipline workflow changes, the `uv.lock` version-sync discovery, and the validation evidence for the new automation gate.
+Revision note: updated on 2026-04-12 after implementing the `v2.2.0` signing gate so the plan now records the concrete `LGM_SIGN_*` interface, the unsigned Actions artifact build, and the remaining external acceptance work for the final signed public release.
+Revision note: updated on 2026-04-12 after manual acceptance of `v2.2.0` so the plan now records the successful self-signed Authenticode verification, the explicit decision not to require a commercial public certificate, and the promotion of `v2.2.0` to the accepted stable release line.
