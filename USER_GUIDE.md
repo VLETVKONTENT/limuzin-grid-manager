@@ -1,123 +1,220 @@
-# Руководство пользователя: LIMUZIN GRID MANAGER
+# User Guide: LIMUZIN GRID MANAGER
 
-Версия: `v2.2.0`.
+Version: `v2.2.0`
 
-Это краткая инструкция для обычной работы и быстрой проверки grid-сценариев и отдельного окна `Точки из Excel`.
+This guide is for normal daily work in the application: building grids, exporting files, working with points from Excel, and checking the most important behaviors before handing the result to a user.
 
-## 1. Введите область
+## 1. Prepare the area
 
-В блоке `Координаты, метры` заполните две точки:
+In the `Coordinates, meters` block, enter two points:
 
-- `NW X`, `NW Y` — верхняя левая точка области.
-- `SE X`, `SE Y` — нижняя правая точка области.
+- `NW X`, `NW Y` - upper-left point
+- `SE X`, `SE Y` - lower-right point
 
-Координаты вводятся в СК-42 / Пулково-42, Гаусс-Крюгер, в метрах. Можно вводить числа с пробелами и запятой:
+Coordinates must be entered in SK-42 / Pulkovo-42, Gauss-Kruger, in meters.
+
+Input rules:
+
+- `X` is northing
+- `Y` is easting
+- spaces and decimal commas are accepted
+- if the points are entered not strictly as NW and SE, the application normalizes the bounds automatically
+
+## 2. Choose the grid
+
+In the `Grid` block, enable what you need:
+
+- `1000x1000` only
+- `100x100` only
+- both together
+
+When both are enabled, the `100x100` grid is built inside each big `1000x1000` tile.
+
+Also choose:
+
+- rounding mode
+- numbering mode for `100x100`
+- start corner
+- spiral direction when spiral numbering is used
+
+## 3. Check preview and validation
+
+Use the `Preview` tab to inspect the scheme before export.
+
+Available actions:
+
+- mouse wheel zoom
+- drag to pan
+- click a big tile to inspect it
+
+Use the `Validation` tab to check:
+
+- area dimensions
+- rounded bounds
+- zone information
+- grid counts
+- warnings
+- blocking errors
+- export summary
+
+### Important zone rule
+
+Areas spanning several Gauss-Kruger zones are allowed, but export is blocked if a single `1000x1000` or `100x100` cell crosses a zone boundary inside the cell.
+
+If that happens:
+
+- enable rounding, or
+- adjust `Y` bounds so the zone boundary goes along the grid edge
+
+Zones outside `1..32` also block export.
+
+## 4. Configure names and style
+
+`Configure 1000x1000 names` opens a table for renaming big tiles.
+
+Rules:
+
+- empty value keeps the default number
+- renaming a big tile does not change small `100x100` numbers inside it
+- ZIP archive entry names still stay `tile_###.kml`
+
+`Configure KML style` lets you change:
+
+- line color and width for `1000x1000`
+- line color and width for `100x100`
+- fill mode for `1000x1000`
+- common fill color and opacity for all `100x100`
+
+Default KML style remains conservative:
+
+- black lines
+- no fill
+- `<fill>0</fill>`
+
+## 5. Export the grid
+
+Open the `Export` tab and choose format:
+
+- `KML`
+- `ZIP`
+- `SVG`
+- `GeoJSON`
+- `CSV`
+
+Then choose output path and generate the result.
+
+### Format notes
+
+- `KML` creates one common file
+- `ZIP` is available only when `1000x1000` is enabled
+- `ZIP` contains files named `tile_###.kml`
+- `SVG` is useful for vector checking
+- `GeoJSON` is useful for GIS tools
+- `CSV` is useful for table-based verification
+
+Long export operations show progress, support cancellation, and use atomic writing through a temporary file, so a failed export should not overwrite an existing good result.
+
+## 6. Work with points from Excel
+
+Open:
 
 ```text
-5660000
-5 660 000
-5660000,0
+Tools -> Points from Excel...
 ```
 
-`X` — северинг, `Y` — восток. Если точки введены не строго как NW/SE, приложение нормализует границы само.
+This opens a separate window that does not change the grid workflow.
 
-## 2. Выберите сетку
+### Expected Excel format
 
-В блоке `Сетка` включите нужные слои:
+The first worksheet with data should contain columns:
 
-- `Сетка 1000x1000` — большие квадраты.
-- `Сетка 100x100` — малые квадраты.
-- Обе сетки вместе — `100x100` будет строиться внутри каждого `1000x1000`.
+```text
+ФИО | Дата | Координаты
+```
 
-Для больших квадратов можно включить или отключить нумерацию змейкой. Для `100x100` доступны обычная нумерация, змейка, спираль от центра наружу и спираль от края к центру.
+The app imports the workbook in the background, so the window stays responsive.
 
-Режим округления:
+After import you can:
 
-- `Внутрь / обрезать` — границы сжимаются до полного набора квадратов.
-- `Наружу / расширить` — границы расширяются до полного набора квадратов.
-- `Без округления` — границы остаются как введены; неполные остатки по краям не попадут в экспорт.
+- review loaded rows
+- review row-level errors
+- choose point color and opacity
+- choose output `.kml`
+- generate point KML
 
-## 3. Проверьте предпросмотр и ошибки
+Point export also runs in the background, shows progress, and supports cancellation.
 
-Откройте вкладку `Предпросмотр`, чтобы увидеть схему. Колесо мыши масштабирует, перетаскивание двигает схему, клик по большому квадрату выбирает его.
+## 7. Save and reopen projects
 
-Тему интерфейса можно выбрать в верхней панели или через меню `Вид` -> `Тема`. Доступны светлая, темная и контрастная темы. Выбор хранится локально на этом компьютере и не сохраняется в `.lgm.json`.
+Use the `Project` menu or toolbar to:
 
-Откройте вкладку `Проверка`, чтобы увидеть:
+- create a new project
+- open `.lgm.json`
+- save
+- save as
 
-- размер области до и после округления;
-- зону Гаусса-Крюгера;
-- количество квадратов;
-- предупреждения;
-- ошибки, которые блокируют экспорт;
-- сводку стиля KML/SVG.
+Project file stores:
 
-Если область пересекает границу зон Гаусса-Крюгера, приложение автоматически обрабатывает ее по зональным сегментам и использует правильный трансформер для каждой экспортируемой ячейки. Если в режиме `Без округления` одна ячейка `1000x1000` или `100x100` сама пересекает границу зоны внутри себя, экспорт будет заблокирован: включите округление или задайте `Y` так, чтобы граница зоны проходила по ребру ячейки. Зоны вне диапазона `1..32` также блокируют экспорт.
+- coordinates
+- grid configuration
+- numbering
+- big tile names
+- KML style
+- export settings
 
-## 4. Настройте имена и стиль
+The save operation is atomic: the app writes to a temporary file first and replaces the final `.lgm.json` only after successful completion.
 
-Кнопка `Настроить имена 1000x1000` открывает таблицу имен больших квадратов. Пустое имя оставляет стандартный номер. В ZIP имена файлов остаются стандартными: `tile_001.kml`, `tile_002.kml` и далее.
+The last opened or saved project path is remembered locally through `QSettings`.
 
-Кнопка `Настроить стиль KML/SVG` открывает настройки:
+## 8. Runtime log
 
-- цвет и толщина линий `1000x1000`;
-- цвет и толщина линий `100x100`;
-- заливка `1000x1000`: без заливки, один цвет, палитра по номерам или пользовательская палитра;
-- заливка `100x100`: один общий цвет и прозрачность для всех малых квадратов.
+If the app, Excel import, or export fails unexpectedly, the error message should show the path to the runtime log.
 
-По умолчанию KML создается без заливки: черные линии и `<fill>0</fill>`. SVG использует те же цвета, толщину линий и настройки заливки.
+Default location:
 
-## 5. Экспортируйте результат
+```text
+%LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\runtime.log
+```
 
-Во вкладке `Экспорт` выберите формат:
+Use this log when reporting a failure.
 
-- `KML — один общий файл`;
-- `ZIP — KML по квадратам 1000x1000`;
-- `SVG — векторная схема`;
-- `GeoJSON — GIS-полигоны`;
-- `CSV — таблица проверки`.
+## 9. Manual smoke checklist
 
-Для ZIP должна быть включена сетка `1000x1000`. SVG сохраняется одним файлом с метрическим `viewBox`, слоями `1000x1000` и `100x100`, подписями и техническими `data-*` атрибутами; номера `100x100` в SVG размещаются в центре малых квадратов. GeoJSON сохраняется как `FeatureCollection` с полигонами WGS84 и свойствами ячеек. CSV сохраняется в UTF-8 with BOM с разделителем `;`, границами СК-42 и центрами WGS84. Во вкладке видно путь результата, количество объектов выбранного формата, примерный размер и состав выбранного экспорта.
+Before handing a new build to a user, check at least:
 
-Нажмите `Сгенерировать` или `Сгенерировать выбранный экспорт`. Во время долгого экспорта доступна кнопка `Отменить`; незавершенный временный файл будет удален, а старый результат не будет заменен.
+- app starts normally
+- main window opens
+- grid preview works
+- validation reacts to invalid zone input
+- KML export works
+- ZIP export works when `1000x1000` is enabled
+- SVG export works
+- GeoJSON export works
+- CSV export works
+- multi-zone export works when cells align to zone boundaries
+- export is blocked when a cell crosses a zone boundary inside itself
+- project save and reopen work
+- `Tools -> Points from Excel...` opens
+- sample `.xlsx` imports without freezing the window
+- point KML export works
+- runtime log path is shown on forced failure
 
-## 6. Сохраните проект
+## 10. If you run from source
 
-Через верхнюю панель или меню `Проект` можно создать новый проект, открыть `.lgm.json`, сохранить текущий проект или сохранить его под новым именем.
+Install dependencies:
 
-Файл проекта хранит координаты, настройки сетки, нумерацию, имена квадратов, стиль KML/SVG и настройки экспорта. Пресеты меняют настройки, но не трогают координаты. Сохранение выполняется атомарно через временный файл, поэтому неудачная перезапись не должна портить уже существующий `.lgm.json`.
+```powershell
+uv sync --extra dev
+```
 
-Приложение запоминает последний открытый или сохраненный `.lgm.json` и при следующем запуске автоматически открывает его. Если файл был удален или перемещен, приложение откроется как новый проект и сбросит сохраненную ссылку.
+Run the app:
 
-Если приложение или фоновый импорт/экспорт завершились ошибкой, откройте путь из сообщения об ошибке. По умолчанию runtime-журнал лежит в `%LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\runtime.log`; если системный каталог недоступен, приложение использует fallback-каталог внутри профиля пользователя. Этот лог нужен для диагностики traceback и передачи отчета о сбое.
+```powershell
+uv run limuzin-grid-manager
+```
 
-## 7. Быстрая проверка версии
+Build EXE:
 
-Для контрольной проверки `v2.2.0` вручную проверьте:
-
-- запуск EXE и отображение главного окна;
-- пункт меню `Инструменты` -> `Точки из Excel...` и открытие отдельного окна точек;
-- загрузку sample-first `.xlsx` в окне `Точки из Excel`, отображение таблицы точек и ошибок по строкам без подвисания окна во время импорта;
-- что при искусственной ошибке импорта или экспорта сообщение показывает путь к `runtime.log`, а журнал действительно появляется в `%LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\`;
-- смену общего цвета и прозрачности точек, выбор итогового `.kml`, появление прогресса и кнопки `Отменить` во время записи и успешную генерацию point-KML;
-- что отмененный point-export удаляет незавершенный временный `.tmp` и не перезаписывает старый `.kml`;
-- общий KML с включенными `1000x1000` и `100x100`;
-- ZIP по квадратам `1000x1000`;
-- SVG-схему с включенными `1000x1000` и `100x100`, включая центрирование номеров малых квадратов;
-- GeoJSON с включенными `1000x1000` и `100x100`;
-- CSV с включенными `1000x1000` и `100x100`;
-- многозонную область в KML, ZIP, SVG, GeoJSON и CSV;
-- экспорт только `100x100` в общий KML;
-- переключение схем нумерации `100x100`;
-- переименование одного большого квадрата;
-- настройку стиля KML/SVG и заливки `100x100`;
-- сохранение проекта `.lgm.json` и повторное открытие;
-- сохранение поверх уже существующего `.lgm.json`;
-- автоматическое открытие последнего сохраненного проекта после перезапуска приложения;
-- переключение светлой, темной и контрастной темы после перезапуска приложения;
-- что выбранная тема не появляется в сохраненном `.lgm.json`;
-- ошибку при ZIP без `1000x1000`;
-- ошибку при зоне вне диапазона `1..32`;
-- ошибку при смещенной ячейке, которая пересекает границу зоны внутри себя в режиме `Без округления`.
-- если вы готовите публикацию на GitHub, проверьте в GitHub Actions, что workflow `CI` завершился успешно и workflow `Release Windows EXE` собрал артефакт `LIMUZIN_GRID_MANAGER.exe`;
-- если хотите отдельно проверить signing-поток, подпишите EXE локально через `LGM_SIGN_EXE=1` и убедитесь, что `Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe` возвращает `Status : Valid`; для такого теста допустим локальный self-signed `.pfx`.
+```powershell
+.\build_exe_windows.bat
+```

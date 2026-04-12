@@ -1,74 +1,52 @@
-# GITHUB: правила работы с репозиторием
+# GITHUB: LIMUZIN GRID MANAGER
 
-Этот файл описывает, как мы работаем с GitHub в проекте LIMUZIN GRID MANAGER.
+This file defines the practical workflow for commits, releases, CI, and public repository hygiene.
 
-## Репозиторий
+Repository: <https://github.com/VLETVKONTENT/limuzin-grid-manager>
 
-- GitHub: https://github.com/VLETVKONTENT/limuzin-grid-manager
-- Видимость: репозиторий готовится к публичной поддерживаемой публикации.
-- Основная ветка: `main`
-- Теги версий: `vX.Y.Z`, например `v2.2.0`
-- Готовый `LIMUZIN_GRID_MANAGER.exe` не хранится в git-истории и публикуется как GitHub Release asset
+Main branch: `main`
 
-## Workflows с v2.2.0
+Current stable version: `v2.2.0`
 
-В репозитории есть два штатных workflow:
+## Core rule
 
-- `.github/workflows/ci.yml` (`CI`) — автоматически запускается для push и pull request, работает на Windows и выполняет `uv sync --extra dev --locked`, `uv run --extra dev pytest`, `uv run --extra dev python -m compileall src tests` и `uv build`
-- `.github/workflows/release-windows.yml` (`Release Windows EXE`) — запускается вручную через `workflow_dispatch` или автоматически по тегу `v*`, собирает `dist/LIMUZIN_GRID_MANAGER.exe` через `build_exe_windows.bat` и публикует EXE как GitHub Actions artifact
+Do not commit, push, tag, or publish a new version until:
 
-Эти workflow не заменяют ручной пользовательский тест. Они добавляют автоматическую дисциплину между локальной подготовкой и публикацией версии.
+- local checks are complete
+- the user has manually tested the version
+- the user has explicitly accepted the version for publication
 
-## Локальная и CI-подпись EXE
+CI helps, but it does not replace manual user testing.
 
-Локальная сборка по умолчанию остается unsigned. Это удобно для обычной разработки и smoke-проверок. При необходимости можно дополнительно проверить signing-пайплайн локальным `.pfx`, включая self-signed сертификат для собственных машин.
+## What to update for a new version
 
-Для локальной подписи `build_exe_windows.bat` понимает env-переменные:
-
-- `LGM_SIGN_EXE=1` — включить этап подписи после PyInstaller
-- `LGM_SIGN_PFX_PATH` — путь к `.pfx`-сертификату вне репозитория
-- `LGM_SIGN_PFX_PASSWORD` — пароль к `.pfx`
-- `LGM_SIGN_TIMESTAMP_URL` — optional URL timestamp-сервера; по умолчанию используется `http://timestamp.digicert.com`
-
-Если `LGM_SIGN_EXE=1`, скрипт до сборки делает fast-fail preflight: проверяет наличие `.pfx`, пароля и `signtool.exe`. После подписи он сразу запускает `Get-AuthenticodeSignature` и считает сборку успешной только при `Status : Valid`.
-
-Подпись EXE в GitHub Actions для текущего релиза не используется. Если нужно проверить signing-путь, это делается локально через `build_exe_windows.bat` и собственный `.pfx`.
-
-## Главное правило
-
-Новая версия не коммитится и не пушится сразу после разработки. До коммита версия должна пройти локальную проверку и ручной пользовательский тест, а публикация делается только после явного подтверждения пользователя.
-
-Базовый порядок такой:
-
-1. Codex реализует новую версию в рабочем дереве и обновляет version metadata и release-документы.
-2. Codex выполняет локальную smoke-проверку и собирает тестовый EXE.
-3. Пользователь вручную тестирует новую версию.
-4. Если пользователь находит проблемы, Codex вносит правки и цикл локальной проверки повторяется.
-5. Только после подтверждения пользователя Codex делает commit и push.
-6. После push workflow `CI` должен завершиться успешно.
-7. Затем должен быть доступен собранный EXE-артефакт из workflow `Release Windows EXE`.
-8. Только после этого создаются git tag и GitHub Release, если версия должна стать опубликованной.
-
-Нельзя коммитить, пушить и тем более публиковать новую версию до пользовательского теста и явного подтверждения, что версия принята.
-
-## Что обновлять при новой версии
-
-Для версии `vX.Y.Z` нужно обновить:
+Always update:
 
 - `pyproject.toml`
 - `src/limuzin_grid_manager/__init__.py`
 - `version_info.txt`
-- `README.md`, если меняется текущая рабочая/публичная версия или описание возможностей
-- `USER_GUIDE.md`, если меняется пользовательский сценарий или чеклист ручной проверки
-- `GRIDBASE.md`, если меняется базовая архитектура, процесс поддержки или важные правила проекта
-- `roadmap.md`, если меняется статус линии развития
 - `versions/GRIDVERSIONS.md`
 - `versions/vX.Y.Z.md`
-- `FIXPROD.md`, если новая версия реализует очередной этап production-hardening плана
 
-## Локальная smoke-проверка перед ручным тестом
+Update when relevant:
 
-Перед передачей версии пользователю на ручной тест:
+- `README.md`
+- `USER_GUIDE.md`
+- `GRIDBASE.md`
+- `GITHUB.md`
+
+Historical planning documents are archived under:
+
+- `versions/roadmaps_archive/roadmap.md`
+- `versions/roadmaps_archive/ROADMAPv2.md`
+- `versions/roadmaps_archive/ROADMAPv2.1.md`
+- `versions/roadmaps_archive/FIXPROD.md`
+
+These archived files should not be treated as active release checklists.
+
+## Local validation before user testing
+
+Run from the repository root:
 
 ```powershell
 uv lock --offline
@@ -77,39 +55,53 @@ uv run --offline --extra dev python -m compileall src tests
 $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 ```
 
-После сборки проверить:
+Then verify:
 
-- `dist/LIMUZIN_GRID_MANAGER.exe` существует
-- версия EXE соответствует новой версии
-- приложение запускается хотя бы smoke-проходом
-- рабочее дерево не содержит лишних build/cache-артефактов
+- `dist/LIMUZIN_GRID_MANAGER.exe` exists
+- version numbers are synchronized
+- build artifacts are not accidentally staged
 
-Если вы хотите дополнительно проверить signing-пайплайн, соберите signed EXE и проверьте:
+## GitHub Actions
 
-```powershell
-$env:LGM_SIGN_EXE='1'
-$env:LGM_SIGN_PFX_PATH='C:\path\to\certificate.pfx'
-$env:LGM_SIGN_PFX_PASSWORD='***'
-.\build_exe_windows.bat
-Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
-```
+The repository contains:
 
-Если подпись включена, ожидается `Status : Valid`. Для проекта допустимо выпускать версию и без коммерческого публичного сертификата, но тогда нужно честно понимать, что внешнего доверия SmartScreen такая схема не дает.
+- `.github/workflows/ci.yml`
+- `.github/workflows/release-windows.yml`
 
-## Что должно быть готово перед публикацией
+Expected meaning:
 
-Перед тем как создавать релиз, различаем четыре разных состояния:
+- `CI` validates the repo on Windows for push and pull request
+- `Release Windows EXE` rebuilds `LIMUZIN_GRID_MANAGER.exe` as a GitHub Actions artifact
 
-- `Локальная smoke-проверка пройдена` — офлайн-команды выше завершились успешно, EXE собран локально и пользователь принял ручной тест
-- `CI green` — после commit/push workflow `CI` завершился успешно на GitHub
-- `Artifact build available` — workflow `Release Windows EXE` успешно собрал и сохранил `LIMUZIN_GRID_MANAGER.exe` как GitHub Actions artifact
-- `Signed EXE verified (optional)` — либо локальный, либо GitHub Actions EXE проходит `Get-AuthenticodeSignature` со статусом `Valid`
+Publication readiness should be read in this order:
 
-Для текущего процесса обязательны первые три пункта. Четвертый пункт выполняется, если вы используете локальный или CI signing-flow.
+1. local validation passed
+2. user manual testing passed
+3. code was committed and pushed
+4. `CI` is green
+5. EXE artifact build is available
+6. only then create tag and GitHub Release
 
-## Что делать после подтверждения пользователя
+## EXE signing
 
-После того как пользователь протестировал версию и подтвердил, что она принята:
+`build_exe_windows.bat` builds an unsigned EXE by default.
+
+Optional local Authenticode signing is supported through:
+
+- `LGM_SIGN_EXE=1`
+- `LGM_SIGN_PFX_PATH`
+- `LGM_SIGN_PFX_PASSWORD`
+- optional `LGM_SIGN_TIMESTAMP_URL`
+
+Rules:
+
+- certificates and passwords must stay outside git
+- self-signed or local signing is allowed for validation
+- unsigned or self-signed EXE must not be presented as publicly trusted commercial signing
+
+## Recommended publication flow
+
+After the user accepts the version:
 
 ```powershell
 git status --short --branch
@@ -118,15 +110,7 @@ git commit -m "Release vX.Y.Z"
 git push origin main
 ```
 
-Дальше дождаться зеленого `CI` и вручную запустить EXE workflow, если нужен артефакт до создания тега:
-
-```powershell
-gh run list --workflow ci.yml --limit 5 --repo VLETVKONTENT/limuzin-grid-manager
-gh workflow run release-windows.yml --ref main --repo VLETVKONTENT/limuzin-grid-manager
-gh run list --workflow release-windows.yml --limit 5 --repo VLETVKONTENT/limuzin-grid-manager
-```
-
-Когда `CI` зеленый и EXE-артефакт доступен, можно оформить релиз. Если signing использовался, перед релизом также полезно проверить `Valid`:
+Check GitHub Actions, then create tag and release:
 
 ```powershell
 git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -134,38 +118,49 @@ git push origin vX.Y.Z
 gh release create vX.Y.Z ".\dist\LIMUZIN_GRID_MANAGER.exe" --repo VLETVKONTENT/limuzin-grid-manager --title "vX.Y.Z" --notes-file "versions\vX.Y.Z.md"
 ```
 
-Если релиз уже был создан, сначала проверить его состояние:
+If you need to inspect release state:
 
 ```powershell
 gh release view vX.Y.Z --repo VLETVKONTENT/limuzin-grid-manager
 ```
 
-## Что не делать
+## What must never be committed
 
-- Не пушить непроверенную пользователем версию
-- Не создавать GitHub Release без подтверждения пользователя
-- Не считать локальную сборку заменой GitHub Actions CI
-- Не считать зеленый CI заменой ручного пользовательского теста
-- Не выдавать unsigned или self-signed EXE за externally trusted публичный релиз без пояснения ограничений
-- Не коммитить временные файлы: `.venv/`, `build/`, `dist/`, `.pytest_cache/`, `__pycache__/`, `*.spec`
-- Не добавлять EXE в git, если только пользователь прямо не попросит хранить бинарник в репозитории
+- `.venv/`
+- `build/`
+- `dist/`
+- `.pytest_cache/`
+- `__pycache__/`
+- `*.spec`
+- `*.exe`
+- local `.env` and secrets
+- user `.lgm.json`
+- generated `*.kml`, `*.kmz`, `*.zip`, `*.svg`, `*.geojson`, `*.csv`
+- certificates and private keys
+- local `AGENTS.md` and `PLANS.md`
 
-## Проверка перед публичным репозиторием
+## Public repository hygiene
 
-Перед переключением видимости на public нужно проверить:
+Before a public release or visibility change, run:
 
-- `git status --short --branch --ignored`: не должно быть неигнорируемых личных или временных файлов
-- `git ls-files`: в индексе не должно быть `.env`, ключей, локальных `.lgm.json`, пользовательских KML/KMZ/ZIP-экспортов, EXE или баз данных
-- `git grep -n -i "token\|secret\|password\|api_key"`: не должно быть секретов
-- История git не должна содержать EXE, архивы, локальные проекты, ключи или `.env`
-- `.venv/`, `dist/`, `build/`, `.pytest_cache/`, `__pycache__/`, `*.spec`, `*.exe`, пользовательские `*.kml`, `*.kmz`, `*.zip` и `*.lgm.json` должны оставаться игнорируемыми
-- Готовый EXE прикрепляется только к GitHub Release как asset
+```powershell
+git status --short --branch --ignored
+git ls-files
+git grep -n -i "token\|secret\|password\|api_key"
+```
 
-## Текущий статус
+The index and history must not contain:
 
-- Текущая рабочая версия: `v2.2.0`
-- Текущая принятая стабильная версия: `v2.2.0`
-- Последний опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.2.0
-- Предыдущий опубликованный release: https://github.com/VLETVKONTENT/limuzin-grid-manager/releases/tag/v2.1.4
-- Основной источник технического контекста: `GRIDBASE.md`
-- История версий: `versions/GRIDVERSIONS.md`
+- secrets
+- `.env`
+- certificates
+- local project files
+- exported user data
+- EXE binaries
+
+## Current release line
+
+- current stable version: `v2.2.0`
+- previous stable version: `v2.1.4`
+- current release notes: `versions/v2.2.0.md`
+- version index: `versions/GRIDVERSIONS.md`

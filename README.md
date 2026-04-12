@@ -1,296 +1,163 @@
 # LIMUZIN GRID MANAGER
 
-**Текущая версия:** `v2.2.0`
+LIMUZIN GRID MANAGER is a Windows desktop application for preparing grid exports and point KML files for AlpineQuest.
 
-**Статус:** текущая принятая стабильная версия после ручного пользовательского теста — `v2.2.0`, предыдущая стабильная версия — `v2.1.4`
+Current version: `v2.2.0`
 
-**Платформа:** Windows
+Stable accepted version: `v2.2.0`
 
-**Назначение:** генератор сеток и point-KML из Excel для AlpineQuest
+Previous stable version: `v2.1.4`
 
-**Координаты:** СК-42 / Пулково-42, Гаусс-Крюгер
+## What the app does
 
-LIMUZIN GRID MANAGER — настольное Windows-приложение для подготовки сеток `1000x1000` и `100x100` метров по координатам в системе СК-42 / Пулково-42, Гаусс-Крюгер. Приложение преобразует координаты в WGS84 для KML и GeoJSON, формирует SVG-схему в метрах для векторной проверки и пишет CSV-таблицу для контроля номеров, зон и координат.
+The application works with SK-42 / Pulkovo-42 Gauss-Kruger coordinates in meters and supports two main workflows:
 
-Проект ориентирован на практическую работу с прямоугольными участками: пользователь задает две точки области, выбирает состав сетки, схему нумерации, стиль KML/SVG и формат экспорта, а приложение показывает предпросмотр, выполняет проверку входных данных и сохраняет готовый результат.
+- Grid workflow: build `1000x1000` and `100x100` grids, preview them, validate the area, and export the result.
+- Points from Excel workflow: import points from a sample-first `.xlsx` file and generate a point KML file.
 
-## Содержание
+Supported grid export formats:
 
-- [Возможности](#возможности)
-- [Быстрый старт](#быстрый-старт)
-- [Как пользоваться](#как-пользоваться)
-- [Координаты и ограничения](#координаты-и-ограничения)
-- [Экспорт](#экспорт)
-- [Файлы проекта](#файлы-проекта)
-- [Сборка и разработка](#сборка-и-разработка)
-- [Тестирование](#тестирование)
-- [Структура репозитория](#структура-репозитория)
-- [Документация проекта](#документация-проекта)
-- [Лицензия](#лицензия)
-- [Роль автора и Codex](#роль-автора-и-codex)
-- [Текущая версия](#текущая-версия)
+- `KML` as one common file
+- `ZIP` with `tile_###.kml` files for `1000x1000` tiles
+- `SVG`
+- `GeoJSON`
+- `CSV`
 
-## Возможности
+Supported point export:
 
-### Сетки
+- point `KML` from the separate `Points from Excel` window
 
-- Построение сетки `1000x1000` метров.
-- Построение сетки `100x100` метров.
-- Совместный режим, где `100x100` строится внутри каждого большого квадрата `1000x1000`.
-- Режим только `100x100` на всю область.
-- Округление границ внутрь, наружу или работа без округления.
-- Автоматическая нормализация введенных точек: если пользователь ввел точки не строго как NW/SE, область все равно приводится к корректным верхней, нижней, левой и правой границам.
+## Key features
 
-### Нумерация
+- PySide6 desktop UI for Windows
+- grids `1000x1000` and `100x100`
+- several numbering modes for `100x100`, including linear, snake, and spiral
+- custom names for big `1000x1000` tiles without renumbering small tiles
+- configurable KML styling, including fill modes for `1000x1000` and common fill for `100x100`
+- 2D preview with zoom, pan, simplified rendering for large areas, and validation summary
+- zone-aware export for areas spanning multiple Gauss-Kruger zones
+- protection against cells that cross a zone boundary inside a single tile
+- atomic export through a temporary file, progress reporting, free-space checks, and cancellation
+- strict `.lgm.json` project loading and atomic project saving
+- separate Excel import window with background import/export and runtime logging
+- Windows EXE build via PyInstaller
 
-- Нумерация больших квадратов `1000x1000` стандартным порядком или змейкой.
-- Гибкая нумерация малых квадратов `100x100`:
-  - обычная;
-  - змейкой;
-  - спираль от центра наружу;
-  - спираль от края к центру;
-  - по строкам;
-  - по колонкам.
-- Настройка стартового угла `NW`, `NE`, `SW`, `SE`.
-- Настройка направления спирали по часовой стрелке или против часовой стрелки.
-- Якорь центра для четных сеток, включая типовую матрицу `10x10`.
-- Переименование больших квадратов `1000x1000` по отдельности без изменения номеров `100x100` внутри них.
+## Quick start
 
-### Стиль KML/SVG
+### Run from source
 
-- Настройка цвета и толщины линий для `1000x1000`.
-- Настройка цвета и толщины линий для `100x100`.
-- Заливка больших квадратов `1000x1000`:
-  - без заливки;
-  - один цвет для всех квадратов;
-  - палитра по номерам;
-  - пользовательская палитра.
-- Заливка всех малых квадратов `100x100` одним общим цветом и прозрачностью.
-- Корректная запись KML-цветов в формате `aabbggrr`.
-- Дефолтный стиль совместим со спокойным рабочим режимом: черные линии и отключенная заливка.
+Requirements:
 
-### Предпросмотр и проверка
+- Windows
+- Python `>=3.11,<3.15`
+- `uv`
 
-- Автоматический 2D-предпросмотр схемы без карты.
-- Выбор большого квадрата кликом.
-- Детализация `100x100` внутри выбранного большого квадрата.
-- Предпросмотр цветов, заливок и нумерации до экспорта.
-- Масштабирование колесом мыши и кнопками.
-- Перемещение схемы перетаскиванием.
-- Вкладка проверки с размерами области, зоной Гаусса-Крюгера, количеством квадратов, предупреждениями и ошибками.
-- Упрощение предпросмотра на больших областях, чтобы интерфейс оставался отзывчивым.
-
-### Темы интерфейса
-
-- Светлая тема, близкая к прежнему виду приложения.
-- Темная тема для работы в слабом освещении.
-- Контрастная тема для яркого света и слабых экранов.
-- Выбор темы хранится локально через `QSettings` и не попадает в `.lgm.json`.
-
-### Устойчивый экспорт
-
-- Экспорт в один общий `.kml`.
-- Экспорт в `.zip`, где каждый большой квадрат `1000x1000` сохраняется отдельным `tile_###.kml`.
-- Экспорт в один `.svg` с метрическим `viewBox`, слоями `1000x1000` и `100x100`, центрированными подписями малых квадратов и техническими `data-*` атрибутами.
-- Экспорт в один `.geojson` как `FeatureCollection` с полигонами WGS84 и свойствами ячеек.
-- Экспорт в один `.csv` в UTF-8 with BOM с разделителем `;`, границами СК-42 и центрами WGS84.
-- Автоматический многозонный экспорт: KML, ZIP, SVG, GeoJSON и CSV используют правильную зону Гаусса-Крюгера для каждой экспортируемой ячейки.
-- Оценка количества объектов экспорта и примерного размера результата.
-- Предупреждения для тяжелых экспортов.
-- Блокировка чрезмерно больших экспортов.
-- Проверка свободного места перед записью.
-- Экспорт в отдельном worker-потоке, чтобы окно не зависало.
-- Отмена долгого экспорта.
-- Атомарная запись через временный файл: незавершенный результат не заменяет старый файл.
-- Отдельное окно `Точки из Excel` внутри приложения: загрузка sample-first `.xlsx` в фоновом worker-потоке без freeze UI, preview точек и ошибок по строкам, настройка цвета/прозрачности и фоновый экспорт point-KML с прогрессом, отменой и атомарной записью без смешивания с grid-flow.
-- Runtime-диагностика: неожиданные сбои пишут traceback в `%LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\runtime.log` (или в fallback-каталог внутри профиля пользователя), а сообщение об ошибке показывает путь к журналу для поддержки.
-
-### Сохранение работы
-
-- Сохранение проекта в `.lgm.json`.
-- Атомарное сохранение проекта через временный файл: неудачная перезапись не повреждает уже существующий `.lgm.json`.
-- Открытие сохраненного проекта без потери координат, настроек сетки, нумерации, имен квадратов, KML-стиля и параметров экспорта.
-- Автоматическое открытие последнего выбранного `.lgm.json` при следующем запуске приложения.
-- Встроенные пресеты:
-  - режим `v0.0.1`;
-  - схемы нумерации;
-  - KML-стили.
-- Строгая проверка структуры `.lgm.json`: поврежденные проекты должны давать понятные ошибки.
-
-## Быстрый старт
-
-### Готовый EXE
-
-Для обычного использования нужен только Windows EXE:
-
-```text
-LIMUZIN_GRID_MANAGER.exe
-```
-
-Готовый бинарник не хранится в git-репозитории. Он собирается локально и прикрепляется к GitHub Release как release asset.
-
-После публикации релиза скачайте EXE из раздела GitHub Releases, запустите файл и работайте через графический интерфейс.
-
-### Запуск из исходников
-
-Для запуска из исходников нужен Python и `uv`.
-
-```powershell
-uv sync --extra dev
-uv run limuzin-grid-manager
-```
-
-## Как пользоваться
-
-1. Введите две точки области: `NW X`, `NW Y`, `SE X`, `SE Y`.
-2. Выберите нужные слои сетки: `1000x1000`, `100x100` или оба слоя вместе.
-3. Настройте округление границ.
-4. Выберите схему нумерации для `100x100`.
-5. При необходимости переименуйте большие квадраты `1000x1000`.
-6. Настройте стиль KML/SVG: линии, заливку больших квадратов и заливку `100x100`.
-7. Проверьте вкладки `Предпросмотр` и `Проверка`.
-8. Во вкладке `Экспорт` выберите формат, папку и имя результата.
-9. Нажмите `Сгенерировать`.
-10. Для повторной работы сохраните проект в `.lgm.json`.
-
-Подробная пользовательская инструкция находится в [`USER_GUIDE.md`](USER_GUIDE.md).
-
-## Координаты и ограничения
-
-Приложение принимает координаты в метрах в системе СК-42 / Пулково-42, Гаусс-Крюгер:
-
-- `X` — северинг, координата по северу.
-- `Y` — восток, координата по востоку.
-
-Ввод допускает пробелы и десятичную запятую:
-
-```text
-5660000
-5 660 000
-5660000,0
-```
-
-Зона Гаусса-Крюгера определяется из координаты `Y`:
-
-```python
-zone = int(abs(y) // 1_000_000)
-epsg = 28400 + zone
-```
-
-Преобразование в WGS84 выполняется через `pyproj`:
-
-```python
-lon, lat = transformer.transform(y, x)
-```
-
-Важный порядок координат:
-
-- пользователь вводит `X, Y`;
-- в `pyproj` передается `Y, X`;
-- в KML записывается `lon,lat,0`.
-
-Ограничения текущей версии:
-
-- поддерживаются зоны Гаусса-Крюгера `1..32`;
-- область, пересекающая несколько зон, экспортируется автоматически, если каждая экспортируемая ячейка `1000x1000` или `100x100` целиком лежит в одной зоне;
-- если в режиме без округления одна экспортируемая ячейка сама пересекает границу зоны, экспорт блокируется с понятной ошибкой: включите округление или задайте границы так, чтобы граница зоны проходила по ребру ячейки;
-- зоны вне диапазона `1..32` блокируются.
-
-## Экспорт
-
-Поддерживаемые форматы:
-
-| Формат | Назначение |
-|---|---|
-| `.kml` | Один общий KML-файл со всей выбранной сеткой. |
-| `.zip` | Архив с отдельным `tile_###.kml` для каждого большого квадрата `1000x1000`. |
-| `.svg` | Один SVG-файл с метрической схемой сетки, слоями и подписями; номера `100x100` размещаются в центре малых квадратов. |
-| `.geojson` | Один GeoJSON `FeatureCollection` с полигонами WGS84 и свойствами `layer`, `zone`, номерами и именами. |
-| `.csv` | Одна CSV-таблица UTF-8 with BOM с разделителем `;`, границами СК-42 и центрами WGS84. |
-
-В многозонной области общий KML, ZIP, GeoJSON и CSV выбирают трансформер по зоне конкретной ячейки. SVG остается метрической схемой, но помечает корневой файл списком зон, а каждый прямоугольник и подпись получают свой `data-zone`. Нумерация больших квадратов остается глобальной по всей области, а `tile_###.kml` в ZIP не переименовываются.
-
-Особенности ZIP-экспорта:
-
-- ZIP доступен только при включенной сетке `1000x1000`.
-- Имена файлов внутри архива остаются стандартными: `tile_001.kml`, `tile_002.kml`, `tile_003.kml`.
-- Пользовательские имена больших квадратов попадают внутрь KML как имена папок и полигонов, но не меняют имена файлов в архиве.
-
-Перед записью приложение показывает сводку: сколько файлов будет создано, сколько объектов выбранного формата будет записано и какой размер результата ожидается примерно.
-
-## Файлы проекта
-
-Файл проекта имеет расширение `.lgm.json` и хранит рабочее состояние:
-
-- координаты;
-- настройки сетки;
-- параметры нумерации;
-- имена больших квадратов;
-- стиль KML/SVG;
-- настройки экспорта.
-
-Файл проекта не является готовым KML-экспортом. Это рабочее состояние, которое можно открыть позже и продолжить настройку.
-
-Приложение запоминает последний открытый или сохраненный `.lgm.json`. При следующем запуске этот проект открывается автоматически, поэтому рабочий профиль не нужно выбирать вручную каждый раз. Если файл был удален или перемещен, ссылка сбрасывается, а приложение открывается как новый проект.
-
-Пользовательские `.lgm.json`, `.kml`, `.kmz`, `.zip`, `.svg`, `.geojson` и `.csv` добавлены в `.gitignore`, чтобы случайно не публиковать личные рабочие файлы в репозитории.
-
-## Сборка и разработка
-
-Установка зависимостей:
+Install dependencies:
 
 ```powershell
 uv sync --extra dev
 ```
 
-Запуск приложения:
+Run the app:
 
 ```powershell
 uv run limuzin-grid-manager
 ```
 
-Сборка Windows EXE:
+### Build EXE
 
 ```powershell
 .\build_exe_windows.bat
 ```
 
-Результат сборки:
+Result:
 
 ```text
 dist/LIMUZIN_GRID_MANAGER.exe
 ```
 
-Начиная с `v2.2.0`, репозиторий также содержит GitHub Actions workflows:
+By default the EXE is unsigned. The build script also supports optional local Authenticode signing through `LGM_SIGN_*` environment variables.
 
-- `.github/workflows/ci.yml` — Windows CI для push и pull request с `pytest`, `compileall` и `uv build`;
-- `.github/workflows/release-windows.yml` — ручная или tag-triggered сборка EXE с публикацией артефакта в Actions.
+## How to use
 
-Скрипт сборки:
+### Grid workflow
 
-- синхронизирует окружение через `uv`;
-- находит данные `pyproj` / PROJ;
-- запускает PyInstaller;
-- добавляет иконку, manifest, version resource и необходимые данные для работы преобразования координат;
-- при `LGM_SIGN_EXE=1` проверяет наличие PFX-файла, пароля и `signtool.exe`, затем подписывает EXE и валидирует его через `Get-AuthenticodeSignature`.
+1. Enter two points of the area in SK-42 / Gauss-Kruger coordinates:
+   `NW X`, `NW Y`, `SE X`, `SE Y`
+2. Choose which grid layers to build:
+   `1000x1000`, `100x100`, or both
+3. Set rounding mode, numbering, names, and KML style if needed
+4. Check the preview and the validation tab
+5. Choose export format and output path
+6. Generate the result
 
-## Тестирование
+### Points from Excel
 
-Полный набор тестов:
+Open `Tools -> Points from Excel...`
+
+The Excel workflow expects a sample-first `.xlsx` file with columns:
+
+```text
+ФИО | Дата | Координаты
+```
+
+Coordinates are parsed from one text cell, converted from SK-42 to WGS84, and exported as point placemarks in KML.
+
+## Coordinates and zones
+
+- Input format: SK-42 / Pulkovo-42, Gauss-Kruger, meters
+- Input order: user enters `X/Y`
+- `pyproj` receives `Y/X`
+- KML and GeoJSON store coordinates as `lon,lat`
+- Zone formula: `zone = int(abs(Y) // 1_000_000)`
+- Supported zones: `1..32`
+
+Multi-zone areas are supported, but only if each exported cell stays fully inside one zone. If a `1000x1000` or `100x100` cell crosses a zone boundary inside the cell, export is blocked with a clear error.
+
+## Project files and logs
+
+### Project file
+
+The application can save and reopen working state in `.lgm.json`.
+
+Project file includes:
+
+- bounds
+- grid options
+- numbering options
+- tile names
+- KML style
+- export settings
+
+The last opened or saved project path is stored locally through `QSettings`, not inside the repository and not inside the project file itself.
+
+### Runtime log
+
+Unexpected runtime failures are written to:
+
+```text
+%LOCALAPPDATA%\LIMUZIN GRID MANAGER\logs\runtime.log
+```
+
+If the default app-data directory is unavailable, the application uses a writable fallback directory inside the user profile.
+
+## Development
+
+### Tests
+
+Run the full test suite:
 
 ```powershell
 uv run --extra dev pytest
 ```
 
-Проверка компиляции:
+Check compilation:
 
 ```powershell
 uv run --extra dev python -m compileall src tests
 ```
 
-Для репозитория `v2.2.0` автоматическая проверка тех же команд теперь выполняется и в GitHub Actions на Windows для Python `3.11` и `3.12`. Для проверки воспроизводимости упаковки и подписи доступен отдельный workflow сборки EXE-артефакта.
-
-Релизная проверка перед ручным тестом:
+### Release-style local validation
 
 ```powershell
 uv lock --offline
@@ -299,99 +166,46 @@ uv run --offline --extra dev python -m compileall src tests
 $env:UV_OFFLINE='1'; .\build_exe_windows.bat
 ```
 
-Если вы хотите дополнительно проверить signing-пайплайн, поверх обычной локальной сборки можно собрать Authenticode-signed EXE. Для этого подходит локальный `.pfx`, включая self-signed сертификат для собственного теста; покупка публичного коммерческого сертификата не является обязательным требованием проекта. Если сертификат уже доступен локально, используйте те же env-переменные, что и в `build_exe_windows.bat`, а затем проверьте статус подписи:
+### GitHub Actions
 
-```powershell
-$env:LGM_SIGN_EXE='1'
-$env:LGM_SIGN_PFX_PATH='C:\path\to\certificate.pfx'
-$env:LGM_SIGN_PFX_PASSWORD='***'
-.\build_exe_windows.bat
-Get-AuthenticodeSignature dist\LIMUZIN_GRID_MANAGER.exe | Format-List Status,StatusMessage,SignerCertificate
-```
+The repository includes two workflows:
 
-Если подпись включена, ожидается `Status : Valid`. Self-signed подпись подтверждает, что release-пайплайн и локальная проверка работают корректно, но не заменяет доверие публичного CA-сертификата для чужих машин и SmartScreen. Если signing-переменные не заданы, скрипт по-прежнему соберет unsigned EXE для локального теста.
+- `.github/workflows/ci.yml` for Windows CI on push and pull request
+- `.github/workflows/release-windows.yml` for rebuilding `LIMUZIN_GRID_MANAGER.exe` as a GitHub Actions artifact
 
-Для `v2.0.0` проверено:
+These workflows complement local validation, but they do not replace manual user testing before release publication.
 
-- `69 passed`;
-- компиляция `src` и `tests` без ошибок;
-- тесты покрывают `core/zones.py`: одиночную зону, границу зон, разрез на две и несколько зон, неподдерживаемые зоны, безопасный multi-zone экспорт и ошибку для ячейки, которая пересекает границу зоны внутри себя;
-- KML, ZIP, SVG, GeoJSON и CSV проверяются на многозонной области;
-- SVG-тест проверяет, что подписи `100x100` находятся в геометрическом центре прямоугольников и используют центральную baseline-привязку;
-- `uv lock --offline`, offline pytest и offline compileall прошли;
-- EXE собран с `FileVersion` и `ProductVersion` `2.0.0.0`;
-- smoke-запуск EXE: процесс стартует и не завершается сразу;
-- PyInstaller сохранил прежнее предупреждение hook-pyproj о `share\proj`, но сборка завершилась успешно.
-- Пользователь вручную протестировал версию и подтвердил, что внесенные изменения работают.
-
-## Структура репозитория
+## Repository structure
 
 ```text
 .
-├── src/limuzin_grid_manager/     # код приложения
-│   ├── app/                      # прикладные сервисы: экспорт, проекты, ресурсы
-│   ├── core/                     # геометрия, CRS, KML/SVG/GeoJSON/CSV, модели, статистика
-│   └── ui/                       # PySide6-интерфейс, темы и предпросмотр
-├── tests/                        # автотесты
-├── versions/                     # история версий и релизные заметки
-├── GRIDBASE.md                   # техническая база проекта
-├── USER_GUIDE.md                 # пользовательская инструкция
-├── GITHUB.md                     # правила релиза и публикации
-├── roadmap.md                    # roadmap до стабильной версии
-├── LICENSE                       # MIT License
-├── build_exe_windows.bat         # сборка Windows EXE
-├── app.manifest                  # Windows manifest
-├── version_info.txt              # version resource для EXE
-├── pyproject.toml                # зависимости и настройки проекта
-└── uv.lock                       # lock-файл зависимостей
+├── src/limuzin_grid_manager/
+│   ├── app/                      # export, projects, point import/export, runtime helpers
+│   ├── core/                     # geometry, CRS, zones, KML/SVG/GeoJSON/CSV, numbering
+│   └── ui/                       # PySide6 windows, preview, themes
+├── tests/                        # automated tests
+├── versions/                     # version notes and archived planning documents
+│   └── roadmaps_archive/         # historical roadmaps and completed execution plans
+├── GRIDBASE.md                   # technical base documentation
+├── USER_GUIDE.md                 # end-user guide
+├── GITHUB.md                     # git, release, and publication rules
+├── build_exe_windows.bat         # Windows EXE build
+├── pyproject.toml                # package metadata and dependencies
+└── uv.lock                       # dependency lock file
 ```
 
-Основные модули:
+## Documentation map
 
-- [`src/limuzin_grid_manager/core/geometry.py`](src/limuzin_grid_manager/core/geometry.py) — нормализация границ, округление и построение сетки.
-- [`src/limuzin_grid_manager/core/crs.py`](src/limuzin_grid_manager/core/crs.py) — преобразование СК-42 / Гаусс-Крюгер в WGS84.
-- [`src/limuzin_grid_manager/core/zones.py`](src/limuzin_grid_manager/core/zones.py) — определение зон, проверка диапазона `1..32` и разбиение `Bounds` на зональные сегменты.
-- [`src/limuzin_grid_manager/core/numbering.py`](src/limuzin_grid_manager/core/numbering.py) — схемы нумерации `100x100`.
-- [`src/limuzin_grid_manager/core/export_cells.py`](src/limuzin_grid_manager/core/export_cells.py) — общий обход экспортируемых ячеек и нумерация для писателей.
-- [`src/limuzin_grid_manager/core/export_progress.py`](src/limuzin_grid_manager/core/export_progress.py) — общий прогресс и отмена экспорта.
-- [`src/limuzin_grid_manager/core/kml.py`](src/limuzin_grid_manager/core/kml.py) — потоковая запись KML и ZIP.
-- [`src/limuzin_grid_manager/core/svg.py`](src/limuzin_grid_manager/core/svg.py) — запись SVG-схемы без внешних зависимостей.
-- [`src/limuzin_grid_manager/core/geojson.py`](src/limuzin_grid_manager/core/geojson.py) — потоковая запись GeoJSON `FeatureCollection`.
-- [`src/limuzin_grid_manager/core/csv_export.py`](src/limuzin_grid_manager/core/csv_export.py) — запись CSV-таблицы UTF-8 with BOM и разделителем `;`.
-- [`src/limuzin_grid_manager/core/stats.py`](src/limuzin_grid_manager/core/stats.py) — проверки, предупреждения и оценки размера экспорта.
-- [`src/limuzin_grid_manager/app/project.py`](src/limuzin_grid_manager/app/project.py) — сохранение и открытие `.lgm.json`.
-- [`src/limuzin_grid_manager/ui/main_window.py`](src/limuzin_grid_manager/ui/main_window.py) — основное окно PySide6.
-- [`src/limuzin_grid_manager/ui/themes.py`](src/limuzin_grid_manager/ui/themes.py) — темы интерфейса, QSS и палитры предпросмотра.
-- [`src/limuzin_grid_manager/ui/preview.py`](src/limuzin_grid_manager/ui/preview.py) — 2D-предпросмотр.
+- [`USER_GUIDE.md`](USER_GUIDE.md) - end-user instructions and manual check flow
+- [`GRIDBASE.md`](GRIDBASE.md) - technical source of truth for behavior and architecture
+- [`GITHUB.md`](GITHUB.md) - release workflow, CI, tag, and publication rules
+- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) - version index
+- [`versions/v2.2.0.md`](versions/v2.2.0.md) - release notes for the current stable version
+- [`versions/roadmaps_archive/roadmap.md`](versions/roadmaps_archive/roadmap.md) - archived roadmap up to `v1.0`
+- [`versions/roadmaps_archive/ROADMAPv2.md`](versions/roadmaps_archive/ROADMAPv2.md) - archived roadmap for `v1.0 -> v2.0`
+- [`versions/roadmaps_archive/ROADMAPv2.1.md`](versions/roadmaps_archive/ROADMAPv2.1.md) - archived roadmap for `v2.0 -> v2.1`
+- [`versions/roadmaps_archive/FIXPROD.md`](versions/roadmaps_archive/FIXPROD.md) - archived production hardening plan up to `v2.2.0`
 
-## Документация проекта
+## License
 
-- [`GRIDBASE.md`](GRIDBASE.md) — техническая база приложения для будущей разработки.
-- [`USER_GUIDE.md`](USER_GUIDE.md) — пользовательская инструкция и чеклист ручной проверки.
-- [`GITHUB.md`](GITHUB.md) — правила commit/push/tag/release и проверки перед публичным репозиторием.
-- [`roadmap.md`](roadmap.md) — история движения к стабильной версии `v1.0`.
-- [`versions/GRIDVERSIONS.md`](versions/GRIDVERSIONS.md) — индекс версий.
-- [`versions/v2.2.0.md`](versions/v2.2.0.md) — заметки текущей принятой стабильной версии.
-
-## Лицензия
-
-Проект распространяется под лицензией MIT. Полный текст лицензии находится в [`LICENSE`](LICENSE).
-
-## Роль автора и Codex
-
-Архитектура, структура репозитория и кодовая реализация подготовлены Codex (OpenAI) по требованиям, уточнениям и обратной связи автора проекта.
-
-Проектные документы в репозитории нужны для того, чтобы будущие изменения можно было продолжать в новых сессиях Codex без потери контекста: они фиксируют назначение приложения, координатную логику, правила экспорта, ограничения, структуру модулей, историю версий и релизный процесс.
-
-## Текущая версия
-
-Текущая версия: `v2.2.0`.
-
-Текущая принятая версия: `v2.2.0`.
-
-Предыдущая стабильная версия: `v2.1.4`.
-
-Изменения текущей принятой версии описаны в [`versions/v2.2.0.md`](versions/v2.2.0.md).
-Изменения предыдущей стабильной версии описаны в [`versions/v2.1.4.md`](versions/v2.1.4.md).
-
-Готовый EXE для публикации должен прикрепляться к GitHub Release как asset, а не храниться в git-истории.
+MIT. See [`LICENSE`](LICENSE).
